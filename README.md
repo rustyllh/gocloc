@@ -1,10 +1,8 @@
 # gocloc
 
-[![GoDoc](https://godoc.org/github.com/hhatto/gocloc?status.svg)](https://godoc.org/github.com/hhatto/gocloc)
-[![ci](https://github.com/hhatto/gocloc/workflows/Go/badge.svg)](https://github.com/hhatto/gocloc/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hhatto/gocloc)](https://goreportcard.com/report/github.com/hhatto/gocloc)
-[![Docker Pulls](https://img.shields.io/docker/pulls/hhatto/gocloc)](https://hub.docker.com/r/hhatto/gocloc)
-[![Docker Image Size](https://img.shields.io/docker/image-size/hhatto/gocloc)](https://hub.docker.com/r/hhatto/gocloc)
+[![GoDoc](https://godoc.org/github.com/rustyllh/gocloc?status.svg)](https://godoc.org/github.com/rustyllh/gocloc)
+[![ci](https://github.com/rustyllh/gocloc/workflows/Go/badge.svg)](https://github.com/rustyllh/gocloc/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/rustyllh/gocloc)](https://goreportcard.com/report/github.com/rustyllh/gocloc)
 
 A little fast [cloc(Count Lines Of Code)](https://github.com/AlDanial/cloc), written in Go.
 Inspired by [tokei](https://github.com/Aaronepower/tokei).
@@ -14,7 +12,7 @@ Inspired by [tokei](https://github.com/Aaronepower/tokei).
 require Go 1.19+
 
 ```
-$ go install github.com/hhatto/gocloc/cmd/gocloc@latest
+$ go install github.com/rustyllh/gocloc/cmd/gocloc@latest
 ```
 
 Arch Linux user can also install from AUR: [gocloc-git](https://aur.archlinux.org/packages/gocloc-git/).
@@ -36,28 +34,6 @@ Go                               1             29              1            323
 -------------------------------------------------------------------------------
 TOTAL                            4             37              1            341
 -------------------------------------------------------------------------------
-```
-
-### Via Docker
-with [dockerhub](https://hub.docker.com/repository/docker/hhatto/gocloc)
-```
-$ docker run --rm -v "${PWD}":/workdir hhatto/gocloc .
-```
-
-with [GitHub Packages](https://github.com/hhatto/gocloc/packages/350535) on GitHub Actions
-```
-jobs:
-  build:
-    name: example of code measurement using gocloc
-    runs-on: ubuntu-18.04
-    steps:
-      - uses: actions/checkout@master
-
-      - name: Login GitHub Registry
-        run: docker login docker.pkg.github.com -u owner -p ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run gocloc
-        run: docker run --rm -v "${PWD}":/workdir docker.pkg.github.com/hhatto/gocloc/gocloc:latest .
 ```
 
 ### Integration Jenkins CI

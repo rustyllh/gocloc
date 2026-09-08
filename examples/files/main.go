@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/hhatto/gocloc"
+	"github.com/rustyllh/gocloc"
 )
 
 func main() {

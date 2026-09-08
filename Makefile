@@ -5,7 +5,7 @@ build:
 	GO111MODULE=on go build -o ./bin/gocloc cmd/gocloc/main.go
 
 update-package:
-	GO111MODULE=on go get -u github.com/hhatto/gocloc
+	GO111MODULE=on go get -u github.com/rustyllh/gocloc
 
 cleanup-package:
 	GO111MODULE=on go mod tidy

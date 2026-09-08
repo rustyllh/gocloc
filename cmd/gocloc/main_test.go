@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hhatto/gocloc"
+	"github.com/rustyllh/gocloc"
 	"github.com/jessevdk/go-flags"
 )
 

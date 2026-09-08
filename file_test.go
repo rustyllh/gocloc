@@ -354,7 +354,7 @@ func TestAnalyzeFile4Makefile(t *testing.T) {
 
 	# Another comment
 	update-package:
-		GO111MODULE=on go get -u github.com/hhatto/gocloc
+		GO111MODULE=on go get -u github.com/rustyllh/gocloc
 
 	run-example:
 		GO111MODULE=on go run examples/languages.go

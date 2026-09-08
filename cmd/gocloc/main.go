@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/hhatto/gocloc"
+	"github.com/rustyllh/gocloc"
 	"github.com/jessevdk/go-flags"
 )
 
