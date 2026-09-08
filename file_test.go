@@ -2,10 +2,31 @@ package gocloc
 
 import (
 	"bytes"
+	"crypto/md5"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestAnalyzeFileAndHash(t *testing.T) {
+	content := []byte("package sample\n// comment\n\nfunc main() {}\n")
+	path := filepath.Join(t.TempDir(), "sample.go")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	language := NewLanguage("Go", []string{"//"}, [][]string{{"/*", "*/"}})
+	clocFile, digest, ignored := analyzeFileAndHash(path, language, NewClocOptions())
+	if ignored {
+		t.Fatal("analyzeFileAndHash() ignored a readable file")
+	}
+	if want := md5.Sum(content); digest != want {
+		t.Fatalf("digest = %x, want %x", digest, want)
+	}
+	if clocFile.Code != 2 || clocFile.Comments != 1 || clocFile.Blanks != 1 {
+		t.Fatalf("counts = (%d, %d, %d), want (2, 1, 1)", clocFile.Code, clocFile.Comments, clocFile.Blanks)
+	}
+}
 
 func TestAnalyzeFile4Python(t *testing.T) {
 	tmpfile := filepath.Join(t.TempDir(), "tmp.py")

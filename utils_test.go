@@ -55,6 +55,18 @@ func TestHashFile(t *testing.T) {
 	}
 }
 
+func TestParallelResultWindowSize(t *testing.T) {
+	for workers, want := range map[int]int{
+		1:  256,
+		8:  256,
+		16: 512,
+	} {
+		if got := parallelResultWindowSize(workers); got != want {
+			t.Fatalf("parallelResultWindowSize(%d) = %d, want %d", workers, got, want)
+		}
+	}
+}
+
 func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "a.go")
@@ -72,12 +84,15 @@ func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
 
 	opts := NewClocOptions()
 	opts.Workers = 4
-	files, err := getAllFilesParallelMD5([]string{dir}, NewDefinedLanguages(), opts)
+	files, clocFiles, err := getAllFilesParallelMD5([]string{dir}, NewDefinedLanguages(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := files["Go"].Files, []string{first, different}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("retained files = %q, want %q", got, want)
+	}
+	if len(clocFiles) != 2 || clocFiles[duplicate] != nil {
+		t.Fatalf("analyzed files = %v, want only retained files", clocFiles)
 	}
 }
 

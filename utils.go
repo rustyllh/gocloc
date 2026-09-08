@@ -147,8 +147,17 @@ type md5Candidate struct {
 
 type md5Result struct {
 	md5Candidate
-	digest  [md5.Size]byte
-	ignored bool
+	digest   [md5.Size]byte
+	clocFile *ClocFile
+	ignored  bool
+}
+
+func parallelResultWindowSize(workers int) int {
+	windowSize := 32 * workers
+	if windowSize < 256 {
+		return 256
+	}
+	return windowSize
 }
 
 func addFileToResult(result map[string]*Language, languages *DefinedLanguages, languageKey, path string) {
@@ -166,11 +175,12 @@ func addFileToResult(result map[string]*Language, languages *DefinedLanguages, l
 	result[languageKey].Files = append(result[languageKey].Files, path)
 }
 
-func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, error) {
+func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, map[string]*ClocFile, error) {
 	workers := resolveWorkerCount(opts)
 	result := make(map[string]*Language)
+	clocFiles := make(map[string]*ClocFile)
 	fileCache := make(map[string]struct{})
-	windowSize := 2 * workers
+	windowSize := parallelResultWindowSize(workers)
 	tokens := make(chan struct{}, windowSize)
 	for range windowSize {
 		tokens <- struct{}{}
@@ -184,8 +194,10 @@ func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *C
 		go func() {
 			defer workerGroup.Done()
 			for candidate := range candidates {
-				digest, ignored := hashFile(candidate.path)
-				results <- md5Result{md5Candidate: candidate, digest: digest, ignored: ignored}
+				language := languages.Langs[candidate.languageKey]
+				clocFile, digest, ignored := analyzeFileAndHash(candidate.path, language, opts)
+				clocFile.Lang = language.Name
+				results <- md5Result{md5Candidate: candidate, digest: digest, clocFile: clocFile, ignored: ignored}
 			}
 		}()
 	}
@@ -257,6 +269,11 @@ func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *C
 				} else {
 					fileCache[cacheKey] = struct{}{}
 					addFileToResult(result, languages, current.languageKey, current.path)
+					language := result[current.languageKey]
+					language.Code += current.clocFile.Code
+					language.Comments += current.clocFile.Comments
+					language.Blanks += current.clocFile.Blanks
+					clocFiles[current.path] = current.clocFile
 				}
 			}
 			tokens <- struct{}{}
@@ -264,14 +281,11 @@ func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *C
 		}
 	}
 
-	return result, <-walkErrors
+	return result, clocFiles, <-walkErrors
 }
 
 // getAllFiles return all the files to be analyzed in paths.
 func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (result map[string]*Language, err error) {
-	if !opts.SkipDuplicated && resolveWorkerCount(opts) > 1 {
-		return getAllFilesParallelMD5(paths, languages, opts)
-	}
 	result = make(map[string]*Language, 0)
 	fileCache := make(map[string]struct{})
 

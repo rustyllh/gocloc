@@ -128,7 +128,19 @@ func NewProcessor(langs *DefinedLanguages, options *ClocOptions) *Processor {
 // Analyze executes gocloc parsing for the directory of the paths argument and returns the result.
 func (p *Processor) Analyze(paths []string) (*Result, error) {
 	total := NewLanguage("TOTAL", []string{}, [][]string{{"", ""}})
-	languages, err := getAllFiles(paths, p.langs, p.opts)
+	var (
+		languages map[string]*Language
+		clocFiles map[string]*ClocFile
+		err       error
+	)
+	if !p.opts.SkipDuplicated && resolveWorkerCount(p.opts) > 1 {
+		languages, clocFiles, err = getAllFilesParallelMD5(paths, p.langs, p.opts)
+	} else {
+		languages, err = getAllFiles(paths, p.langs, p.opts)
+		if err == nil {
+			clocFiles = analyzeFiles(languages, p.opts)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +153,6 @@ func (p *Processor) Analyze(paths []string) (*Result, error) {
 			}
 		}
 	}
-	clocFiles := analyzeFiles(languages, p.opts)
-
 	for _, language := range languages {
 		files := int32(len(language.Files))
 		if len(language.Files) <= 0 {

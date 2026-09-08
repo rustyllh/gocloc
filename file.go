@@ -2,7 +2,9 @@ package gocloc
 
 import (
 	"bufio"
+	"crypto/md5"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"sort"
@@ -66,6 +68,40 @@ func AnalyzeFile(filename string, language *Language, opts *ClocOptions) *ClocFi
 	defer fp.Close()
 
 	return AnalyzeReader(filename, language, fp, opts)
+}
+
+type hashingReader struct {
+	reader io.Reader
+	hash   hash.Hash
+	err    error
+}
+
+func (r *hashingReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		_, _ = r.hash.Write(p[:n])
+	}
+	if err != nil && err != io.EOF {
+		r.err = err
+	}
+	return n, err
+}
+
+func analyzeFileAndHash(filename string, language *Language, opts *ClocOptions) (clocFile *ClocFile, digest [md5.Size]byte, ignored bool) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return &ClocFile{Name: filename}, digest, true
+	}
+	defer file.Close()
+
+	hasher := md5.New()
+	reader := &hashingReader{reader: file, hash: hasher}
+	clocFile = AnalyzeReader(filename, language, reader, opts)
+	if reader.err != nil {
+		return clocFile, digest, true
+	}
+	copy(digest[:], hasher.Sum(nil))
+	return clocFile, digest, false
 }
 
 // AnalyzeReader is analyzing file for io.Reader.
