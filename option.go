@@ -2,6 +2,9 @@ package gocloc
 
 import "regexp"
 
+// MaxWorkers limits fixed worker configurations to a bounded resource footprint.
+const MaxWorkers = 64
+
 // ClocOptions is gocloc processor options.
 type ClocOptions struct {
 	Debug          bool
@@ -13,6 +16,7 @@ type ClocOptions struct {
 	ReNotMatchDir  *regexp.Regexp
 	ReMatchDir     *regexp.Regexp
 	Fullpath       bool
+	Workers        int
 
 	// OnCode is triggered for each line of code.
 	OnCode func(line string)

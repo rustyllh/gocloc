@@ -3,10 +3,12 @@ package gocloc
 import (
 	"crypto/md5"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 func InsertPipesInTheMiddle(input string) string {
@@ -57,20 +59,32 @@ func nextRune(s string) rune {
 }
 
 func checkMD5Sum(path string, fileCache map[string]struct{}) (ignore bool) {
-	content, err := os.ReadFile(path)
-	if err != nil {
+	digest, ignored := hashFile(path)
+	if ignored {
 		return true
 	}
-
-	// calc md5sum
-	hash := md5.Sum(content)
-	c := fmt.Sprintf("%x", hash)
+	c := string(digest[:])
 	if _, ok := fileCache[c]; ok {
 		return true
 	}
 
 	fileCache[c] = struct{}{}
 	return false
+}
+
+func hashFile(path string) (digest [md5.Size]byte, ignored bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return digest, true
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return digest, true
+	}
+	copy(digest[:], hash.Sum(nil))
+	return digest, false
 }
 
 func isVCSDir(path string) bool {
@@ -125,8 +139,139 @@ func checkOptionMatch(path string, info os.FileInfo, opts *ClocOptions) bool {
 	return true
 }
 
+type md5Candidate struct {
+	sequence    uint64
+	path        string
+	languageKey string
+}
+
+type md5Result struct {
+	md5Candidate
+	digest  [md5.Size]byte
+	ignored bool
+}
+
+func addFileToResult(result map[string]*Language, languages *DefinedLanguages, languageKey, path string) {
+	if _, ok := result[languageKey]; !ok {
+		definedLang := NewLanguage(
+			languages.Langs[languageKey].Name,
+			languages.Langs[languageKey].lineComments,
+			languages.Langs[languageKey].multiLines,
+		)
+		if len(languages.Langs[languageKey].regexLineComments) > 0 {
+			definedLang.regexLineComments = languages.Langs[languageKey].regexLineComments
+		}
+		result[languageKey] = definedLang
+	}
+	result[languageKey].Files = append(result[languageKey].Files, path)
+}
+
+func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, error) {
+	workers := resolveWorkerCount(opts)
+	result := make(map[string]*Language)
+	fileCache := make(map[string]struct{})
+	windowSize := 2 * workers
+	tokens := make(chan struct{}, windowSize)
+	for range windowSize {
+		tokens <- struct{}{}
+	}
+	candidates := make(chan md5Candidate, windowSize)
+	results := make(chan md5Result, windowSize)
+
+	var workerGroup sync.WaitGroup
+	for range workers {
+		workerGroup.Add(1)
+		go func() {
+			defer workerGroup.Done()
+			for candidate := range candidates {
+				digest, ignored := hashFile(candidate.path)
+				results <- md5Result{md5Candidate: candidate, digest: digest, ignored: ignored}
+			}
+		}()
+	}
+
+	walkErrors := make(chan error, 1)
+	go func() {
+		var walkErr error
+		sequence := uint64(0)
+		for _, root := range paths {
+			vcsInRoot := isVCSDir(root)
+			walkErr = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%s\n", err)
+					return nil
+				}
+				if checkDefaultIgnore(path, info, vcsInRoot) || !checkOptionMatch(path, info, opts) {
+					return nil
+				}
+				ext, ok := getFileType(path, opts)
+				if !ok {
+					return nil
+				}
+				languageKey, ok := Exts[ext]
+				if !ok {
+					return nil
+				}
+				if _, ok := opts.ExcludeExts[languageKey]; ok {
+					return nil
+				}
+				if len(opts.IncludeLangs) != 0 {
+					if _, ok := opts.IncludeLangs[languageKey]; !ok {
+						return nil
+					}
+				}
+				<-tokens
+				candidates <- md5Candidate{sequence: sequence, path: path, languageKey: languageKey}
+				sequence++
+				return nil
+			})
+			if walkErr != nil {
+				break
+			}
+		}
+		close(candidates)
+		walkErrors <- walkErr
+	}()
+
+	go func() {
+		workerGroup.Wait()
+		close(results)
+	}()
+
+	pending := make(map[uint64]md5Result)
+	nextSequence := uint64(0)
+	for resultItem := range results {
+		pending[resultItem.sequence] = resultItem
+		for {
+			current, ok := pending[nextSequence]
+			if !ok {
+				break
+			}
+			delete(pending, nextSequence)
+			if !current.ignored {
+				cacheKey := string(current.digest[:])
+				if _, duplicated := fileCache[cacheKey]; duplicated {
+					if opts.Debug {
+						fmt.Printf("[ignore=%v] find same md5\n", current.path)
+					}
+				} else {
+					fileCache[cacheKey] = struct{}{}
+					addFileToResult(result, languages, current.languageKey, current.path)
+				}
+			}
+			tokens <- struct{}{}
+			nextSequence++
+		}
+	}
+
+	return result, <-walkErrors
+}
+
 // getAllFiles return all the files to be analyzed in paths.
 func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (result map[string]*Language, err error) {
+	if !opts.SkipDuplicated && resolveWorkerCount(opts) > 1 {
+		return getAllFilesParallelMD5(paths, languages, opts)
+	}
 	result = make(map[string]*Language, 0)
 	fileCache := make(map[string]struct{})
 
@@ -169,18 +314,7 @@ func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions)
 						}
 					}
 
-					if _, ok := result[targetExt]; !ok {
-						definedLang := NewLanguage(
-							languages.Langs[targetExt].Name,
-							languages.Langs[targetExt].lineComments,
-							languages.Langs[targetExt].multiLines,
-						)
-						if len(languages.Langs[targetExt].regexLineComments) > 0 {
-							definedLang.regexLineComments = languages.Langs[targetExt].regexLineComments
-						}
-						result[targetExt] = definedLang
-					}
-					result[targetExt].Files = append(result[targetExt].Files, path)
+					addFileToResult(result, languages, targetExt, path)
 				}
 			}
 			return nil

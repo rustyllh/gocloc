@@ -1,7 +1,10 @@
 package gocloc
 
 import (
+	"crypto/md5"
 	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
@@ -29,6 +32,92 @@ func TestCheckMD5SumIgnore(t *testing.T) {
 	}
 	if !checkMD5Sum("./utils_test.go", fileCache) {
 		t.Errorf("invalid sequence")
+	}
+}
+
+func TestHashFile(t *testing.T) {
+	content := []byte("package sample\n")
+	path := filepath.Join(t.TempDir(), "sample.go")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	digest, ignored := hashFile(path)
+	if ignored {
+		t.Fatal("hashFile() ignored a readable file")
+	}
+	if want := md5.Sum(content); digest != want {
+		t.Fatalf("hashFile() = %x, want %x", digest, want)
+	}
+
+	if _, ignored := hashFile(filepath.Join(t.TempDir(), "missing.go")); !ignored {
+		t.Fatal("hashFile() did not ignore a missing file")
+	}
+}
+
+func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "a.go")
+	duplicate := filepath.Join(dir, "b.go")
+	different := filepath.Join(dir, "c.go")
+	for path, content := range map[string]string{
+		first:     "package first\n",
+		duplicate: "package first\n",
+		different: "package different\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	opts := NewClocOptions()
+	opts.Workers = 4
+	files, err := getAllFilesParallelMD5([]string{dir}, NewDefinedLanguages(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := files["Go"].Files, []string{first, different}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained files = %q, want %q", got, want)
+	}
+}
+
+func TestGetAllFilesParallelMD5ContinuesAfterWalkError(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "valid.go")
+	if err := os.WriteFile(file, []byte("package valid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := NewClocOptions()
+	opts.Workers = 4
+	files, err := getAllFiles([]string{filepath.Join(dir, "missing"), dir}, NewDefinedLanguages(), opts)
+	if err != nil {
+		t.Fatalf("getAllFiles() error = %v, want nil", err)
+	}
+	if got, want := files["Go"].Files, []string{file}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained files = %q, want %q", got, want)
+	}
+}
+
+func TestGetAllFilesSkipDuplicatedKeepsAllFiles(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "a.go")
+	duplicate := filepath.Join(dir, "b.go")
+	for _, path := range []string{first, duplicate} {
+		if err := os.WriteFile(path, []byte("package same\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	opts := NewClocOptions()
+	opts.Workers = 4
+	opts.SkipDuplicated = true
+	files, err := getAllFiles([]string{dir}, NewDefinedLanguages(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := files["Go"].Files, []string{first, duplicate}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained files = %q, want %q", got, want)
 	}
 }
 

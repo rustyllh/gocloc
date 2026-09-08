@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/hhatto/gocloc"
@@ -57,6 +58,7 @@ type CmdOptions struct {
 	NotMatchDir    string `long:"not-match-d" description:"exclude dir name (regex)"`
 	Fullpath       bool   `long:"fullpath" description:"apply match/not-match options to full file paths instead of base names"`
 	Debug          bool   `long:"debug" description:"dump debug log for developer"`
+	Workers        *int   `long:"workers" description:"number of file analysis workers (1-64; default: automatic)"`
 	SkipDuplicated bool   `long:"skip-duplicated" description:"skip duplicated files"`
 	ShowLang       bool   `long:"show-lang" description:"print about all languages and extensions"`
 	ShowVersion    bool   `long:"version" description:"print version info"`
@@ -65,6 +67,28 @@ type CmdOptions struct {
 type outputBuilder struct {
 	opts   *CmdOptions
 	result *gocloc.Result
+}
+
+func configureWorkerOptions(opts CmdOptions, clocOpts *gocloc.ClocOptions) error {
+	if opts.Workers == nil {
+		clocOpts.Workers = automaticWorkerCount()
+		return nil
+	}
+	if *opts.Workers < 0 {
+		return fmt.Errorf("--workers must be greater than or equal to zero")
+	}
+	if *opts.Workers == 0 {
+		return fmt.Errorf("--workers must be between 1 and %d", gocloc.MaxWorkers)
+	}
+	if *opts.Workers > gocloc.MaxWorkers {
+		return fmt.Errorf("--workers must not exceed %d", gocloc.MaxWorkers)
+	}
+	clocOpts.Workers = *opts.Workers
+	return nil
+}
+
+func automaticWorkerCount() int {
+	return runtime.GOMAXPROCS(0)
 }
 
 func newOutputBuilder(result *gocloc.Result, opts *CmdOptions) *outputBuilder {
@@ -285,6 +309,10 @@ func main() {
 	paths, err := flags.Parse(&opts)
 	if err != nil {
 		return
+	}
+	if err := configureWorkerOptions(opts, clocOpts); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	// value for language result
