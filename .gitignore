@@ -9,3 +9,9 @@ vendor/
 bin/gocloc
 dist/
 coverage.out
+
+.idea
+docs/superpowers
+*.pprof
+trace*.out
+gocloc.test
