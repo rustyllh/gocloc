@@ -4,8 +4,8 @@
 [![ci](https://github.com/rustyllh/gocloc/workflows/Go/badge.svg)](https://github.com/rustyllh/gocloc/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/rustyllh/gocloc)](https://goreportcard.com/report/github.com/rustyllh/gocloc)
 
-A little fast [cloc(Count Lines Of Code)](https://github.com/AlDanial/cloc), written in Go.
-Inspired by [tokei](https://github.com/Aaronepower/tokei).
+A fast, parallel source code line counter written in Go, based on [hhatto/gocloc](https://github.com/hhatto/gocloc).
+Inspired by [tokei](https://github.com/Aaronepower/tokei), with performance optimizations for file scanning and line counting.
 
 ## Installation
 
