@@ -49,6 +49,14 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 			if got.digest != md5.Sum([]byte(tc.content)) {
 				t.Fatal("digest must include the detection prefix exactly once")
 			}
+			opts.SkipDuplicated = true
+			withoutHash := detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts)
+			if withoutHash.ignored || !reflect.DeepEqual(withoutHash.clocFile, want) {
+				t.Fatalf("skip-duplicated result = %+v, want %+v", withoutHash.clocFile, want)
+			}
+			if withoutHash.digest != [md5.Size]byte{} {
+				t.Fatal("skip-duplicated must not compute a digest")
+			}
 			opts.ExcludeExts[key] = struct{}{}
 			if !detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts).ignored {
 				t.Fatal("excluded language was accepted")

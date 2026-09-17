@@ -85,7 +85,7 @@ func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
 
 	opts := NewClocOptions()
 	opts.Workers = 4
-	files, clocFiles, err := getAllFilesParallelMD5([]string{dir}, NewDefinedLanguages(), opts)
+	files, clocFiles, err := scanAndAnalyzeFiles([]string{dir}, NewDefinedLanguages(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}

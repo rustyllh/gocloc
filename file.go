@@ -77,8 +77,8 @@ type hashingReader struct {
 	err    error
 }
 
-// detectAndAnalyzeFile hashes physical reads once, then replays the detection
-// prefix only to the line parser. File descriptors remain bounded by workers.
+// detectAndAnalyzeFile reuses the detection prefix for line analysis and, when
+// deduplication is enabled, hashes physical reads once. Workers bound open files.
 func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, opts *ClocOptions) md5Result {
 	result := md5Result{md5Candidate: candidate, ignored: true}
 	file, err := os.Open(candidate.path)
@@ -87,9 +87,13 @@ func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, o
 	}
 	defer file.Close()
 
-	hasher := md5.New()
-	hashed := &hashingReader{reader: file, hash: hasher}
-	reader := bufio.NewReader(hashed)
+	var source io.Reader = file
+	var hashed *hashingReader
+	if !opts.SkipDuplicated {
+		hashed = &hashingReader{reader: file, hash: md5.New()}
+		source = hashed
+	}
+	reader := bufio.NewReader(source)
 	var prefix []byte
 	ext, ok := detectFileType(candidate.path, opts, func(all bool) ([]byte, error) {
 		var readErr error
@@ -118,10 +122,12 @@ func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, o
 	result.languageKey = languageKey
 	content := io.MultiReader(bytes.NewReader(prefix), reader)
 	result.clocFile = AnalyzeReader(candidate.path, languages.Langs[languageKey], content, opts)
-	if hashed.err != nil {
-		return result
+	if hashed != nil {
+		if hashed.err != nil {
+			return result
+		}
+		copy(result.digest[:], hashed.hash.Sum(nil))
 	}
-	copy(result.digest[:], hasher.Sum(nil))
 	result.ignored = false
 	return result
 }

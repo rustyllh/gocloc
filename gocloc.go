@@ -133,8 +133,8 @@ func (p *Processor) Analyze(paths []string) (*Result, error) {
 		clocFiles map[string]*ClocFile
 		err       error
 	)
-	if !p.opts.SkipDuplicated && resolveWorkerCount(p.opts) > 1 {
-		languages, clocFiles, err = getAllFilesParallelMD5(paths, p.langs, p.opts)
+	if resolveWorkerCount(p.opts) > 1 {
+		languages, clocFiles, err = scanAndAnalyzeFiles(paths, p.langs, p.opts)
 	} else {
 		languages, err = getAllFiles(paths, p.langs, p.opts)
 		if err == nil {

@@ -232,7 +232,7 @@ func addFileToResult(result map[string]*Language, languages *DefinedLanguages, l
 	result[languageKey].Files = append(result[languageKey].Files, path)
 }
 
-func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, map[string]*ClocFile, error) {
+func scanAndAnalyzeFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, map[string]*ClocFile, error) {
 	workers := resolveWorkerCount(opts)
 	result := make(map[string]*Language)
 	clocFiles := make(map[string]*ClocFile)
@@ -290,21 +290,21 @@ func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *C
 				break
 			}
 			delete(pending, nextSequence)
-			if !current.ignored {
+			if !current.ignored && !opts.SkipDuplicated {
 				cacheKey := string(current.digest[:])
-				if _, duplicated := fileCache[cacheKey]; duplicated {
-					if opts.Debug {
-						fmt.Printf("[ignore=%v] find same md5\n", current.path)
-					}
-				} else {
-					fileCache[cacheKey] = struct{}{}
-					addFileToResult(result, languages, current.languageKey, current.path)
-					language := result[current.languageKey]
-					language.Code += current.clocFile.Code
-					language.Comments += current.clocFile.Comments
-					language.Blanks += current.clocFile.Blanks
-					clocFiles[current.path] = current.clocFile
+				_, current.ignored = fileCache[cacheKey]
+				if current.ignored && opts.Debug {
+					fmt.Printf("[ignore=%v] find same md5\n", current.path)
 				}
+				fileCache[cacheKey] = struct{}{}
+			}
+			if !current.ignored {
+				addFileToResult(result, languages, current.languageKey, current.path)
+				language := result[current.languageKey]
+				language.Code += current.clocFile.Code
+				language.Comments += current.clocFile.Comments
+				language.Blanks += current.clocFile.Blanks
+				clocFiles[current.path] = current.clocFile
 			}
 			tokens <- struct{}{}
 			nextSequence++

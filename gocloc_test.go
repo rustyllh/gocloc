@@ -3,6 +3,7 @@ package gocloc
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -75,6 +76,16 @@ func TestProcessorAnalyzeWorkersPreservesDuplicateBehavior(t *testing.T) {
 			parallel := analyzeDirectory(t, dir, &ClocOptions{Workers: 2, SkipDuplicated: skipDuplicated})
 			if serial.Total.Total != parallel.Total.Total || serial.Total.Code != parallel.Total.Code {
 				t.Fatalf("serial totals = (%d, %d), parallel totals = (%d, %d)", serial.Total.Total, serial.Total.Code, parallel.Total.Total, parallel.Total.Code)
+			}
+			if !reflect.DeepEqual(serial.Files, parallel.Files) {
+				t.Fatalf("serial files = %v, parallel files = %v", serial.Files, parallel.Files)
+			}
+			wantFiles := 1
+			if skipDuplicated {
+				wantFiles = 2
+			}
+			if len(parallel.Files) != wantFiles {
+				t.Fatalf("file count = %d, want %d", len(parallel.Files), wantFiles)
 			}
 		})
 	}
