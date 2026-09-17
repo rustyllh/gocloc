@@ -66,7 +66,7 @@ $ gocloc --show-lang
 * cloc 2.04
 * tokei 14.0.0 compiled with serialization support: json
 * upstream gocloc [679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d)
-* gocloc [071d5ba](https://github.com/rustyllh/gocloc/commit/071d5ba6f4392c6469cb49c050707152184d4f3f)
+* gocloc: local build based on `def4f11`, including worker-side language detection and WalkDir optimizations (2026-09-17)
 * target repository is [golang/go commit:be1160f](https://github.com/golang/go/tree/be1160f2a4)
 
 All tools scanned `/Users/howardliu/WorkSpace/opensource/go` with `dist`, `node_modules`, and `target` excluded. The command output is from a representative warm-cache run. The `time` lines are warm-cache averages: 10 runs for tokei and both gocloc versions, and 3 runs for cloc. gocloc uses 8 workers.
@@ -147,6 +147,8 @@ gocloc-upstream --not-match-d='dist|node_modules|target' .  0.628s user 0.638s s
 
 ### gocloc
 
+Updated on 2026-09-17 using the same target revision and command. The time line is the average of 10 runs after one warm-up run, with stdout redirected to `/dev/null` during timing.
+
 ```
 $ time gocloc --not-match-d='dist|node_modules|target' --workers=8 .
 -------------------------------------------------------------------------------
@@ -165,7 +167,7 @@ JavaScript                       9            301            332           1705
 -------------------------------------------------------------------------------
 TOTAL                        13995         310202         509643        2924932
 -------------------------------------------------------------------------------
-gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.742s user 0.756s system 323.0% cpu 0.464 total
+gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.744s user 0.823s system 603.4% cpu 0.260 total
 ```
 
 ## License

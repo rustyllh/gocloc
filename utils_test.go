@@ -2,6 +2,7 @@ package gocloc
 
 import (
 	"crypto/md5"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -93,6 +94,99 @@ func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
 	}
 	if len(clocFiles) != 2 || clocFiles[duplicate] != nil {
 		t.Fatalf("analyzed files = %v, want only retained files", clocFiles)
+	}
+}
+
+func TestParallelDetectionPreservesOrderAcrossIgnoredFiles(t *testing.T) {
+	dir := t.TempDir()
+	// More ignored candidates than the window must still release all tokens.
+	for i := range parallelResultWindowSize(4) + 1 {
+		path := filepath.Join(dir, fmt.Sprintf("a%04d.unknown", i))
+		if err := os.WriteFile(path, []byte("unknown\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	content := []byte("#!/usr/bin/env python\n# comment\nprint(1)\n")
+	for _, name := range []string{"b.go", "c.py"} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	serial := analyzeDirectory(t, dir, &ClocOptions{Workers: 1})
+	parallel := analyzeDirectory(t, dir, &ClocOptions{Workers: 4})
+	if !reflect.DeepEqual(serial.Files, parallel.Files) || !reflect.DeepEqual(serial.Total, parallel.Total) {
+		t.Fatalf("serial and parallel results differ: %v / %v", serial.Files, parallel.Files)
+	}
+	first := parallel.Files[filepath.Join(dir, "b.go")]
+	if len(parallel.Files) != 1 || first == nil || first.Lang != "Python" {
+		t.Fatalf("expected first copy with shebang language, got %v", parallel.Files)
+	}
+}
+
+func TestWalkCandidateFilesMatchesLegacyWalk(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"main.go", "target/a.go", "target/sub/b.go", "target-other/c.go",
+		".git/config.go", ".hidden/visible.go", "src/keep.go", "src/skip.txt",
+	} {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package sample\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(dir, "src"), filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, pattern := range []string{"", "target", "target$", `target\b`, "target|src", "(?m)target$"} {
+		for _, root := range []string{dir, filepath.Join(dir, ".git"), filepath.Join(dir, "main.go")} {
+			t.Run(pattern+"/"+filepath.Base(root), func(t *testing.T) {
+				opts := NewClocOptions()
+				if pattern != "" {
+					opts.ReNotMatchDir = regexp.MustCompile(pattern)
+				}
+				want := []string{}
+				err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if !checkDefaultIgnore(path, info, isVCSDir(root)) && checkOptionMatch(path, info, opts) {
+						want = append(want, path)
+					}
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := []string{}
+				if err := walkCandidateFiles(root, opts, func(path string) error {
+					got = append(got, path)
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("candidates = %v, legacy = %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestCanPruneDirectory(t *testing.T) {
+	for pattern, want := range map[string]bool{
+		"dist|node_modules|target": true,
+		"^/src/target":             true,
+		"target$":                  false,
+		`target\b`:                 false,
+		`target\B`:                 false,
+		"(?m)target$":              false,
+	} {
+		if got := canPruneDirectory(regexp.MustCompile(pattern)); got != want {
+			t.Errorf("canPruneDirectory(%q) = %v, want %v", pattern, got, want)
+		}
 	}
 }
 

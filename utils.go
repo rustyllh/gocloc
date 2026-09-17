@@ -4,9 +4,11 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"regexp/syntax"
 	"strings"
 	"sync"
 )
@@ -113,7 +115,7 @@ func checkDefaultIgnore(path string, info os.FileInfo, isVCS bool) bool {
 	return false
 }
 
-func checkOptionMatch(path string, info os.FileInfo, opts *ClocOptions) bool {
+func checkOptionMatch(path string, info interface{ Name() string }, opts *ClocOptions) bool {
 	// check match directory & file options
 	targetFile := info.Name()
 	if opts.Fullpath {
@@ -137,6 +139,61 @@ func checkOptionMatch(path string, info os.FileInfo, opts *ClocOptions) bool {
 	}
 
 	return true
+}
+
+// A match without end or word-boundary assertions survives appending a child
+// path. Other expressions retain per-file filtering to preserve their semantics.
+func canPruneDirectory(re *regexp.Regexp) bool {
+	if re == nil {
+		return false
+	}
+	expr, err := syntax.Parse(re.String(), syntax.Perl)
+	if err != nil {
+		return false
+	}
+	var stable func(*syntax.Regexp) bool
+	stable = func(expr *syntax.Regexp) bool {
+		switch expr.Op {
+		case syntax.OpEndLine, syntax.OpEndText, syntax.OpWordBoundary, syntax.OpNoWordBoundary:
+			return false
+		}
+		for _, sub := range expr.Sub {
+			if !stable(sub) {
+				return false
+			}
+		}
+		return true
+	}
+	return stable(expr)
+}
+
+func walkCandidateFiles(root string, opts *ClocOptions, visit func(string) error) error {
+	vcsInRoot := isVCSDir(root)
+	pruneExcluded := canPruneDirectory(opts.ReNotMatchDir)
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			return nil
+		}
+		if !vcsInRoot && isVCSDir(path) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			// Join removes a relative root's ".", so it is not a stable prefix.
+			dir := filepath.Clean(path)
+			if pruneExcluded && dir != "." && opts.ReNotMatchDir.MatchString(dir) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !checkOptionMatch(path, entry, opts) {
+			return nil
+		}
+		return visit(path)
+	})
 }
 
 type md5Candidate struct {
@@ -194,10 +251,7 @@ func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *C
 		go func() {
 			defer workerGroup.Done()
 			for candidate := range candidates {
-				language := languages.Langs[candidate.languageKey]
-				clocFile, digest, ignored := analyzeFileAndHash(candidate.path, language, opts)
-				clocFile.Lang = language.Name
-				results <- md5Result{md5Candidate: candidate, digest: digest, clocFile: clocFile, ignored: ignored}
+				results <- detectAndAnalyzeFile(candidate, languages, opts)
 			}
 		}()
 	}
@@ -207,33 +261,9 @@ func getAllFilesParallelMD5(paths []string, languages *DefinedLanguages, opts *C
 		var walkErr error
 		sequence := uint64(0)
 		for _, root := range paths {
-			vcsInRoot := isVCSDir(root)
-			walkErr = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "%s\n", err)
-					return nil
-				}
-				if checkDefaultIgnore(path, info, vcsInRoot) || !checkOptionMatch(path, info, opts) {
-					return nil
-				}
-				ext, ok := getFileType(path, opts)
-				if !ok {
-					return nil
-				}
-				languageKey, ok := Exts[ext]
-				if !ok {
-					return nil
-				}
-				if _, ok := opts.ExcludeExts[languageKey]; ok {
-					return nil
-				}
-				if len(opts.IncludeLangs) != 0 {
-					if _, ok := opts.IncludeLangs[languageKey]; !ok {
-						return nil
-					}
-				}
+			walkErr = walkCandidateFiles(root, opts, func(path string) error {
 				<-tokens
-				candidates <- md5Candidate{sequence: sequence, path: path, languageKey: languageKey}
+				candidates <- md5Candidate{sequence: sequence, path: path}
 				sequence++
 				return nil
 			})
@@ -290,21 +320,7 @@ func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions)
 	fileCache := make(map[string]struct{})
 
 	for _, root := range paths {
-		vcsInRoot := isVCSDir(root)
-		err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", err)
-				return nil
-			}
-			if ignore := checkDefaultIgnore(path, info, vcsInRoot); ignore {
-				return nil
-			}
-
-			// check match & not-match directory
-			if match := checkOptionMatch(path, info, opts); !match {
-				return nil
-			}
-
+		err = walkCandidateFiles(root, opts, func(path string) error {
 			if ext, ok := getFileType(path, opts); ok {
 				if targetExt, ok := Exts[ext]; ok {
 					// check exclude extension

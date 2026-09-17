@@ -395,12 +395,28 @@ func getFileTypeByShebang(path string) (shebangLang string, ok bool) {
 }
 
 func getFileType(path string, opts *ClocOptions) (ext string, ok bool) {
+	return detectFileType(path, opts, func(all bool) ([]byte, error) {
+		if all {
+			return os.ReadFile(path)
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		return bufio.NewReader(file).ReadBytes('\n')
+	})
+}
+
+// detectFileType preserves filename and shebang precedence while allowing callers
+// to reuse the bytes consumed for language detection.
+func detectFileType(path string, opts *ClocOptions, readContent func(bool) ([]byte, error)) (ext string, ok bool) {
 	ext = filepath.Ext(path)
 	base := filepath.Base(path)
 
 	switch ext {
 	case ".m", ".v", ".fs", ".r", ".ts":
-		content, err := os.ReadFile(path)
+		content, err := readContent(true)
 		if err != nil {
 			return "", false
 		}
@@ -410,7 +426,7 @@ func getFileType(path string, opts *ClocOptions) (ext string, ok bool) {
 		}
 		return lang, true
 	case ".mo":
-		content, err := os.ReadFile(path)
+		content, err := readContent(true)
 		if err != nil {
 			return "", false
 		}
@@ -454,9 +470,15 @@ func getFileType(path string, opts *ClocOptions) (ext string, ok bool) {
 		return "Dockerfile", true
 	}
 
-	shebangLang, ok := getFileTypeByShebang(path)
-	if ok {
-		return shebangLang, true
+	line, err := readContent(false)
+	// Like the original detector, an unterminated first line is not a shebang.
+	if err == nil {
+		line = bytes.TrimLeftFunc(line, unicode.IsSpace)
+		if len(line) > 2 && line[0] == '#' && line[1] == '!' {
+			if lang, found := getShebang(string(line)); found {
+				return lang, true
+			}
+		}
 	}
 
 	if len(ext) >= 2 {

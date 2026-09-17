@@ -2,6 +2,7 @@ package gocloc
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/md5"
 	"fmt"
 	"hash"
@@ -74,6 +75,55 @@ type hashingReader struct {
 	reader io.Reader
 	hash   hash.Hash
 	err    error
+}
+
+// detectAndAnalyzeFile hashes physical reads once, then replays the detection
+// prefix only to the line parser. File descriptors remain bounded by workers.
+func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, opts *ClocOptions) md5Result {
+	result := md5Result{md5Candidate: candidate, ignored: true}
+	file, err := os.Open(candidate.path)
+	if err != nil {
+		return result
+	}
+	defer file.Close()
+
+	hasher := md5.New()
+	hashed := &hashingReader{reader: file, hash: hasher}
+	reader := bufio.NewReader(hashed)
+	var prefix []byte
+	ext, ok := detectFileType(candidate.path, opts, func(all bool) ([]byte, error) {
+		var readErr error
+		if all {
+			prefix, readErr = io.ReadAll(reader)
+		} else {
+			prefix, readErr = reader.ReadBytes('\n')
+		}
+		return prefix, readErr
+	})
+	if !ok {
+		return result
+	}
+	languageKey, ok := Exts[ext]
+	if !ok {
+		return result
+	}
+	if _, excluded := opts.ExcludeExts[languageKey]; excluded {
+		return result
+	}
+	if len(opts.IncludeLangs) != 0 {
+		if _, included := opts.IncludeLangs[languageKey]; !included {
+			return result
+		}
+	}
+	result.languageKey = languageKey
+	content := io.MultiReader(bytes.NewReader(prefix), reader)
+	result.clocFile = AnalyzeReader(candidate.path, languages.Langs[languageKey], content, opts)
+	if hashed.err != nil {
+		return result
+	}
+	copy(result.digest[:], hasher.Sum(nil))
+	result.ignored = false
+	return result
 }
 
 func (r *hashingReader) Read(p []byte) (int, error) {

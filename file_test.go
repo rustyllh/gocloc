@@ -5,8 +5,62 @@ import (
 	"crypto/md5"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestDetectAndAnalyzeFile(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{name: "plain.go", content: "package main\n// comment\n\n"},
+		{name: "override.go", content: "#!/usr/bin/env python\n# comment\nprint(1)\n"},
+		{name: "script", content: "#!/bin/sh\necho hello\n"},
+		{name: "unterminated.go", content: "#!/usr/bin/env python"},
+		{name: "empty.go"},
+		{name: "long.go", content: "//" + strings.Repeat("x", 20000) + "\npackage main"},
+		{name: "ambiguous.ts", content: "export const value: number = 1;\n"},
+		{name: "actor.mo", content: "actor { public query func greet() : async Text { \"hello\" } };\n"},
+		{name: "Makefile", content: "all:\n\techo hello\n"},
+		{name: "unknown.xyz", content: "hello\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), tc.name)
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			opts := NewClocOptions()
+			langs := NewDefinedLanguages()
+			ext, recognized := getFileType(path, opts)
+			key, known := Exts[ext]
+			got := detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts)
+			if !recognized || !known {
+				if !got.ignored {
+					t.Fatal("unknown language was accepted")
+				}
+				return
+			}
+			want := AnalyzeFile(path, langs.Langs[key], opts)
+			if got.ignored || got.languageKey != key || !reflect.DeepEqual(got.clocFile, want) {
+				t.Fatalf("combined result = %+v (%+v), want %s %+v", got, got.clocFile, key, want)
+			}
+			if got.digest != md5.Sum([]byte(tc.content)) {
+				t.Fatal("digest must include the detection prefix exactly once")
+			}
+			opts.ExcludeExts[key] = struct{}{}
+			if !detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts).ignored {
+				t.Fatal("excluded language was accepted")
+			}
+			delete(opts.ExcludeExts, key)
+			opts.IncludeLangs["not-a-language"] = struct{}{}
+			if !detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts).ignored {
+				t.Fatal("language outside include filter was accepted")
+			}
+		})
+	}
+}
 
 func TestAnalyzeFileAndHash(t *testing.T) {
 	content := []byte("package sample\n// comment\n\nfunc main() {}\n")
