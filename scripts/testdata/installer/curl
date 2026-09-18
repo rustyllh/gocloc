@@ -1,0 +1,33 @@
+#!/bin/sh
+# Offline transport used only by test-install.sh.
+set -eu
+output=
+url=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --output) output=$2; shift 2 ;;
+        --write-out|--proto|--proto-redir|--tlsv1.2|--connect-timeout|--max-time|--retry)
+            if [ "$1" = --tlsv1.2 ]; then shift; else shift 2; fi
+            ;;
+        https://*) url=$1; shift ;;
+        *) shift ;;
+    esac
+done
+printf '%s\n' "$url" >> "$GOCLOC_INSTALL_TEST_FIXTURES/requests"
+case "$url" in
+    https://github.com/rustyllh/gocloc/releases/latest)
+        [ "${GOCLOC_INSTALL_TEST_FAILURE:-}" != latest ] || exit 22
+        printf 'https://github.com/rustyllh/gocloc/releases/tag/v1.2.3'
+        ;;
+    https://github.com/rustyllh/gocloc/releases/download/v1.2.3/*)
+        [ "${GOCLOC_INSTALL_TEST_FAILURE:-}" != download ] || exit 22
+        asset=${url##*/}
+        cp "$GOCLOC_INSTALL_TEST_FIXTURES/$asset" "$output"
+        case "$asset/${GOCLOC_INSTALL_TEST_FAILURE:-}" in
+            *_checksums.txt/missing) printf '\n' > "$output" ;;
+            *_checksums.txt/duplicate) cat "$GOCLOC_INSTALL_TEST_FIXTURES/$asset" >> "$output" ;;
+            *.tar.gz/corrupt) printf 'corrupt' >> "$output" ;;
+        esac
+        ;;
+    *) printf 'Unexpected URL: %s\n' "$url" >&2; exit 1 ;;
+esac

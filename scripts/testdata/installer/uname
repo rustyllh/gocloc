@@ -1,0 +1,6 @@
+#!/bin/sh
+case "$1" in
+    -s) printf '%s\n' "$GOCLOC_INSTALL_TEST_OS" ;;
+    -m) printf '%s\n' "$GOCLOC_INSTALL_TEST_ARCH" ;;
+    *) exit 1 ;;
+esac

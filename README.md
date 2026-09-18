@@ -9,13 +9,73 @@ Inspired by [tokei](https://github.com/Aaronepower/tokei), with performance opti
 
 ## Installation
 
-Requires Go 1.23+.
+### Release installer (recommended)
+
+Install a prebuilt binary from [GitHub Releases](https://github.com/rustyllh/gocloc/releases); Go is not required.
+The installers select the latest stable release by default, verify its SHA-256 checksum, and print the installed version.
+A release must include the binary archives and checksum file; source-only tags cannot be installed this way.
+
+**macOS / Linux**
+
+Requires `curl`, `tar`, and either `sha256sum` or `shasum`. Download the script, review it, then run it:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/rustyllh/gocloc/master/install.sh -o gocloc-install.sh
+sh gocloc-install.sh
+```
+
+The default installation directory is `$HOME/.local/bin`; no administrator privileges are needed.
+If necessary, add the following to your shell configuration (for example, `~/.zshrc` or `~/.bashrc`) and open a new terminal:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+To select a release and/or installation directory:
+
+```sh
+sh gocloc-install.sh --version vX.Y.Z --install-dir "$HOME/.local/bin"
+```
+
+**Windows (PowerShell 5.1+)**
+
+Download the script, review it, then run it:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/rustyllh/gocloc/master/install.ps1 -OutFile gocloc-install.ps1
+.\gocloc-install.ps1
+```
+
+The default installation directory is `%LOCALAPPDATA%\gocloc\bin`; no administrator privileges are needed.
+Add this directory to the beginning of your user `Path` in **Environment Variables**, then open a new terminal.
+The installer does not change your PATH or execution policy. If scripts are blocked, follow your organization's execution policy.
+
+To select a release and/or installation directory:
+
+```powershell
+.\gocloc-install.ps1 -Version vX.Y.Z -InstallDir "$env:LOCALAPPDATA\gocloc\bin"
+```
+
+Replace `vX.Y.Z` with a published release tag. Run the installer again to upgrade; downloads and checksums are verified before replacing the existing binary.
+Supported release targets are macOS (Intel / Apple Silicon), Linux (x86-64 / ARM64 / i386), and Windows (x86-64 / i386).
+Other architectures, including Windows ARM64, are rejected explicitly.
+If another copy was installed using `go install`, ensure the new installation directory comes before `GOBIN`/`GOPATH/bin` in PATH.
+Confirm with `gocloc --version`.
+
+### Manual download
+
+Download the archive for your OS and architecture from [GitHub Releases](https://github.com/rustyllh/gocloc/releases),
+verify it against the accompanying `gocloc_<version>_checksums.txt`, and extract `gocloc` (or `gocloc.exe`) into a directory on PATH.
+
+### Go install
+
+Requires Go 1.23+:
 
 ```
 $ go install github.com/rustyllh/gocloc/cmd/gocloc@latest
 ```
 
-Arch Linux user can also install from AUR: [gocloc-git](https://aur.archlinux.org/packages/gocloc-git/).
+The AUR package [gocloc-git](https://aur.archlinux.org/packages/gocloc-git/) tracks upstream gocloc, not this optimized fork.
 
 ## Usage
 

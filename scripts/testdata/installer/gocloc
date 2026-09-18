@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "${GOCLOC_INSTALL_TEST_FAILURE:-}" != binary ] || exit 1
+[ "$1" = --version ] || exit 1
+printf '1.2.3 (installer-test)\n'

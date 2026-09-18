@@ -1,0 +1,50 @@
+name: Installers
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix:
+    name: Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check shell syntax
+        run: sh -n install.sh && sh -n scripts/test-install.sh
+      - name: Test installer with offline release fixtures
+        run: sh scripts/test-install.sh
+
+  windows:
+    name: Installer (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - name: Build test binary
+        run: go build -o ./bin/gocloc.exe ./cmd/gocloc
+      - name: Test installer with Windows PowerShell 5.1
+        shell: powershell
+        run: ./scripts/test-install.ps1 -BinaryPath ./bin/gocloc.exe
+      - name: Test installer with PowerShell 7
+        shell: pwsh
+        run: ./scripts/test-install.ps1 -BinaryPath ./bin/gocloc.exe

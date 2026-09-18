@@ -36,5 +36,8 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
 release:
   prerelease: auto
