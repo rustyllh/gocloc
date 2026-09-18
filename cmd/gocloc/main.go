@@ -7,10 +7,11 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
-	"github.com/jessevdk/go-flags"
 	"github.com/rustyllh/gocloc"
+	"github.com/spf13/cobra"
 )
 
 // Version is version string for gocloc command
@@ -75,23 +76,22 @@ const (
 var rowLen = 79
 
 // CmdOptions is gocloc command options.
-// It is necessary to use notation that follows go-flags.
 type CmdOptions struct {
-	ByFile         bool   `long:"by-file" description:"report results for every encountered source file"`
-	SortTag        string `long:"sort" default:"code" description:"sort based on a certain column" choice:"name" choice:"files" choice:"blank" choice:"comment" choice:"code"`
-	OutputType     string `long:"output-type" default:"default" description:"output type [values: default,markdown,cloc-xml,sloccount,json]"`
-	ExcludeExt     string `long:"exclude-ext" description:"exclude file name extensions (separated commas)"`
-	IncludeLang    string `long:"include-lang" description:"include language name (separated commas)"`
-	Match          string `long:"match" description:"include file name (regex)"`
-	NotMatch       string `long:"not-match" description:"exclude file name (regex)"`
-	MatchDir       string `long:"match-d" description:"include dir name (regex)"`
-	NotMatchDir    string `long:"not-match-d" description:"exclude dir name (regex)"`
-	Fullpath       bool   `long:"fullpath" description:"apply match/not-match options to full file paths instead of base names"`
-	Debug          bool   `long:"debug" description:"dump debug log for developer"`
-	Workers        *int   `long:"workers" description:"number of file analysis workers (1-64; default: automatic)"`
-	SkipDuplicated bool   `long:"skip-duplicated" description:"skip duplicated files"`
-	ShowLang       bool   `long:"show-lang" description:"print about all languages and extensions"`
-	ShowVersion    bool   `long:"version" description:"print version info"`
+	ByFile         bool
+	SortTag        string
+	OutputType     string
+	ExcludeExt     string
+	IncludeLang    string
+	Match          string
+	NotMatch       string
+	MatchDir       string
+	NotMatchDir    string
+	Fullpath       bool
+	Debug          bool
+	Workers        *int
+	SkipDuplicated bool
+	ShowLang       bool
+	ShowVersion    bool
 }
 
 type outputBuilder struct {
@@ -329,46 +329,188 @@ func (o *outputBuilder) WriteResult() {
 }
 
 func main() {
-	var opts CmdOptions
-	clocOpts := gocloc.NewClocOptions()
-	// parse command line options
-	parser := flags.NewParser(&opts, flags.Default)
-	parser.Name = "gocloc"
-	parser.Usage = "[OPTIONS] PATH[...]"
-
-	paths, err := flags.Parse(&opts)
-	if err != nil {
-		return
-	}
-	if err := configureWorkerOptions(opts, clocOpts); err != nil {
+	if err := newRootCommand().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
 
-	// value for language result
-	languages := gocloc.NewDefinedLanguages()
-
-	if opts.ShowVersion {
-		info, _ := debug.ReadBuildInfo()
-		fmt.Println(versionString(Version, GitCommit, info))
-		return
+func newRootCommand() *cobra.Command {
+	var opts CmdOptions
+	var workerCount int
+	command := &cobra.Command{
+		Use:                "gocloc [OPTIONS] PATH[...]",
+		Short:              "A fast, parallel source code line counter",
+		Args:               cobra.ArbitraryArgs,
+		SilenceErrors:      true,
+		SilenceUsage:       true,
+		DisableSuggestions: true,
+		CompletionOptions:  cobra.CompletionOptions{DisableDefaultCmd: true},
+		RunE: func(cmd *cobra.Command, paths []string) error {
+			if cmd.Flags().Changed("workers") {
+				opts.Workers = &workerCount
+			}
+			clocOpts := gocloc.NewClocOptions()
+			if err := configureWorkerOptions(opts, clocOpts); err != nil {
+				return err
+			}
+			if opts.ShowVersion {
+				info, _ := debug.ReadBuildInfo()
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), versionString(Version, GitCommit, info))
+				return err
+			}
+			if opts.ShowLang {
+				languages := gocloc.NewDefinedLanguages()
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), languages.GetFormattedString())
+				return err
+			}
+			if len(paths) == 0 {
+				return cmd.Help()
+			}
+			return runAnalysis(paths, opts, clocOpts)
+		},
 	}
+	command.DisableFlagsInUseLine = true
+	flags := command.Flags()
+	flags.SetInterspersed(true)
+	flags.BoolVarP(
+		&opts.ByFile,
+		"by-file",
+		"f",
+		false,
+		"report results for every encountered source file",
+	)
+	opts.SortTag = "code"
+	flags.VarP(
+		(*sortTagValue)(&opts.SortTag),
+		"sort",
+		"s",
+		"sort based on a certain column [name,files,blank,comment,code]",
+	)
+	flags.StringVarP(
+		&opts.OutputType,
+		"output-type",
+		"o",
+		OutputTypeDefault,
+		"output type [values: default,markdown,cloc-xml,sloccount,json]",
+	)
+	flags.StringVarP(
+		&opts.ExcludeExt,
+		"exclude-ext",
+		"e",
+		"",
+		"exclude file name extensions (separated commas)",
+	)
+	flags.StringVarP(
+		&opts.IncludeLang,
+		"include-lang",
+		"l",
+		"",
+		"include language names (separated commas)",
+	)
+	flags.StringVar(
+		&opts.Match,
+		"match",
+		"",
+		"include file name (regex)",
+	)
+	flags.StringVar(
+		&opts.NotMatch,
+		"not-match",
+		"",
+		"exclude file name (regex)",
+	)
+	flags.StringVar(
+		&opts.MatchDir,
+		"match-d",
+		"",
+		"include dir name (regex)",
+	)
+	flags.StringVar(
+		&opts.NotMatchDir,
+		"not-match-d",
+		"",
+		"exclude dir name (regex)",
+	)
+	flags.BoolVar(
+		&opts.Fullpath,
+		"fullpath",
+		false,
+		"apply match/not-match options to full file paths instead of base names",
+	)
+	flags.BoolVar(
+		&opts.Debug,
+		"debug",
+		false,
+		"dump debug log for developer",
+	)
+	flags.VarP(
+		(*workerCountValue)(&workerCount),
+		"workers",
+		"w",
+		"number of file analysis workers (1-64; default: automatic)",
+	)
+	flags.BoolVar(
+		&opts.SkipDuplicated,
+		"skip-duplicated",
+		false,
+		"skip duplicate-file detection",
+	)
+	flags.BoolVarP(
+		&opts.ShowLang,
+		"show-lang",
+		"L",
+		false,
+		"print about all languages and extensions",
+	)
+	flags.BoolVarP(
+		&opts.ShowVersion,
+		"version",
+		"V",
+		false,
+		"print version info",
+	)
+	return command
+}
 
-	if opts.ShowLang {
-		fmt.Println(languages.GetFormattedString())
-		return
+// go-flags parsed integers in base ten; pflag's IntVar instead uses base zero.
+// Keep values such as --workers=08 decimal and reject hexadecimal notation.
+type workerCountValue int
+
+func (v *workerCountValue) String() string { return strconv.Itoa(int(*v)) }
+func (v *workerCountValue) Type() string   { return "int" }
+
+func (v *workerCountValue) Set(value string) error {
+	count, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid worker count: %w", err)
 	}
+	*v = workerCountValue(count)
+	return nil
+}
 
-	if len(paths) <= 0 {
-		parser.WriteHelp(os.Stdout)
-		return
+// Validate each occurrence during parsing, including before informational exits.
+type sortTagValue string
+
+func (v *sortTagValue) String() string { return string(*v) }
+func (v *sortTagValue) Type() string   { return "string" }
+
+func (v *sortTagValue) Set(value string) error {
+	switch value {
+	case "name", "files", "blank", "comment", "code":
+		*v = sortTagValue(value)
+		return nil
+	default:
+		return fmt.Errorf("must be one of name, files, blank, comment or code")
 	}
+}
 
+func runAnalysis(paths []string, opts CmdOptions, clocOpts *gocloc.ClocOptions) error {
 	// check sort tag option with other options
 	if opts.ByFile && opts.SortTag == "files" {
-		fmt.Println("`--sort files` option cannot be used in conjunction with the `--by-file` option")
-		os.Exit(1)
+		return fmt.Errorf("`--sort files` option cannot be used in conjunction with the `--by-file` option")
 	}
+	languages := gocloc.NewDefinedLanguages()
 
 	// setup option for exclude extensions
 	for _, ext := range strings.Split(opts.ExcludeExt, ",") {
@@ -381,17 +523,24 @@ func main() {
 	}
 
 	// directory and file matching options
-	if opts.Match != "" {
-		clocOpts.ReMatch = regexp.MustCompile(opts.Match)
-	}
-	if opts.NotMatch != "" {
-		clocOpts.ReNotMatch = regexp.MustCompile(opts.NotMatch)
-	}
-	if opts.MatchDir != "" {
-		clocOpts.ReMatchDir = regexp.MustCompile(opts.MatchDir)
-	}
-	if opts.NotMatchDir != "" {
-		clocOpts.ReNotMatchDir = regexp.MustCompile(opts.NotMatchDir)
+	for _, filter := range []struct {
+		name    string
+		pattern string
+		target  **regexp.Regexp
+	}{
+		{name: "match", pattern: opts.Match, target: &clocOpts.ReMatch},
+		{name: "not-match", pattern: opts.NotMatch, target: &clocOpts.ReNotMatch},
+		{name: "match-d", pattern: opts.MatchDir, target: &clocOpts.ReMatchDir},
+		{name: "not-match-d", pattern: opts.NotMatchDir, target: &clocOpts.ReNotMatchDir},
+	} {
+		if filter.pattern == "" {
+			continue
+		}
+		compiled, err := regexp.Compile(filter.pattern)
+		if err != nil {
+			return fmt.Errorf("invalid --%s: %w", filter.name, err)
+		}
+		*filter.target = compiled
 	}
 
 	// setup option for include languages
@@ -408,10 +557,10 @@ func main() {
 	processor := gocloc.NewProcessor(languages, clocOpts)
 	result, err := processor.Analyze(paths)
 	if err != nil {
-		fmt.Printf("fail gocloc analyze. error: %v\n", err)
-		return
+		return fmt.Errorf("fail gocloc analyze: %w", err)
 	}
 
 	builder := newOutputBuilder(result, &opts)
 	builder.WriteResult()
+	return nil
 }

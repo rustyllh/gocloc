@@ -2,49 +2,55 @@ name: Go
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
 
 jobs:
-
   build:
-    name: Build
+    name: Go ${{ matrix.go }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
-        go: [ '1.22', '1.23' ]
+        go: ['1.23.x', 'stable']
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
 
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go }}
+      - name: Download modules
+        run: go mod download
 
-    - name: use cache
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Check formatting and imports
+        shell: bash
+        run: |
+          # Pin a version that supports the minimum Go version without editing go.mod.
+          format_diff=$(go run golang.org/x/tools/cmd/goimports@v0.24.0 -d .)
+          if [ -n "$format_diff" ]; then
+            printf '%s\n' "$format_diff"
+            exit 1
+          fi
 
-    - name: Download Modules
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: go mod download
+      - name: Build
+        run: go build -o ./bin/gocloc ./cmd/gocloc
 
-    - name: Build
-      run: go build -o ./bin/gocloc cmd/gocloc/main.go
-
-    - name: Check imports
-      shell: bash
-      run: |
-        export PATH=$(go env GOPATH)/bin:$PATH
-        go get golang.org/x/tools/cmd/goimports
-        diff -u <(echo -n) <(goimports -d .)
-
-    - name: Test
-      run: go test -v
+      - name: Test
+        run: go test -race -tags=integration ./...

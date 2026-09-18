@@ -1,11 +1,10 @@
+version: 2
 project_name: gocloc
-env:
-  - GO111MODULE=on
 before:
   hooks:
-    - go mod tidy
+    - go mod download
 builds:
-  - main: 'cmd/gocloc/main.go'
+  - main: ./cmd/gocloc
     binary: gocloc
     ldflags:
       - -s -w
@@ -27,7 +26,8 @@ builds:
       - goos: windows
         goarch: "arm64"
 archives:
-  - name_template: >-
+  - formats: [tar.gz]
+    name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
@@ -35,6 +35,6 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 release:
   prerelease: auto

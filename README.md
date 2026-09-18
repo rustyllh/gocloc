@@ -9,7 +9,7 @@ Inspired by [tokei](https://github.com/Aaronepower/tokei), with performance opti
 
 ## Installation
 
-require Go 1.19+
+Requires Go 1.23+.
 
 ```
 $ go install github.com/rustyllh/gocloc/cmd/gocloc@latest
@@ -34,6 +34,29 @@ Go                               1             29              1            323
 -------------------------------------------------------------------------------
 TOTAL                            4             37              1            341
 -------------------------------------------------------------------------------
+```
+
+### Short Options
+
+Long options remain supported. Short and long options can be mixed in the same command.
+
+| Short | Long | Description |
+| --- | --- | --- |
+| `-w` | `--workers` | Number of workers (1–64; automatic when omitted) |
+| `-f` | `--by-file` | Report results for each file |
+| `-s` | `--sort` | Sort by name, files, blank, comment, or code |
+| `-o` | `--output-type` | Select the output format |
+| `-e` | `--exclude-ext` | Exclude comma-separated extensions |
+| `-l` | `--include-lang` | Include comma-separated languages |
+| `-L` | `--show-lang` | List supported languages |
+| `-V` | `--version` | Print version information |
+| `-h` | `--help` | Show help |
+
+```bash
+gocloc -w 8 -f -s name -o json .
+gocloc -w8 -e txt,md --not-match-d='dist|node_modules|target' .
+gocloc -l Go,Python .
+gocloc -V
 ```
 
 ### Integration Jenkins CI
