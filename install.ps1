@@ -100,7 +100,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Downloaded binary cannot run on this machine' }
     if (Test-Path -LiteralPath $destination) {
         # Replace keeps the old binary intact if replacement fails (e.g. a file lock).
-        [IO.File]::Replace($stagedBinary, $destination, $null)
+        # PowerShell 5.1 converts $null to an empty string for .NET string arguments.
+        [IO.File]::Replace($stagedBinary, $destination, [NullString]::Value)
     } else {
         [IO.File]::Move($stagedBinary, $destination)
     }
