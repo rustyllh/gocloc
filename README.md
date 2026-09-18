@@ -14,14 +14,14 @@ Inspired by [tokei](https://github.com/Aaronepower/tokei), with performance opti
 Install a prebuilt binary from [GitHub Releases](https://github.com/rustyllh/gocloc/releases); Go is not required.
 The installers select the latest stable release by default, verify its SHA-256 checksum, and print the installed version.
 A release must include the binary archives and checksum file; source-only tags cannot be installed this way.
+The commands below execute the downloaded installer directly. You can review [install.sh](install.sh) or [install.ps1](install.ps1) before running them.
 
 **macOS / Linux**
 
-Requires `curl`, `tar`, and either `sha256sum` or `shasum`. Download the script, review it, then run it:
+Requires `curl`, `tar`, and either `sha256sum` or `shasum`:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/rustyllh/gocloc/master/install.sh -o gocloc-install.sh
-sh gocloc-install.sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/rustyllh/gocloc/master/install.sh | sh
 ```
 
 The default installation directory is `$HOME/.local/bin`; no administrator privileges are needed.
@@ -34,16 +34,15 @@ export PATH="$HOME/.local/bin:$PATH"
 To select a release and/or installation directory:
 
 ```sh
-sh gocloc-install.sh --version vX.Y.Z --install-dir "$HOME/.local/bin"
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/rustyllh/gocloc/master/install.sh | sh -s -- --version vX.Y.Z --install-dir "$HOME/.local/bin"
 ```
 
 **Windows (PowerShell 5.1+)**
 
-Download the script, review it, then run it:
+Run in PowerShell:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/rustyllh/gocloc/master/install.ps1 -OutFile gocloc-install.ps1
-.\gocloc-install.ps1
+& ([scriptblock]::Create((Invoke-RestMethod https://raw.githubusercontent.com/rustyllh/gocloc/master/install.ps1 -ErrorAction Stop)))
 ```
 
 The default installation directory is `%LOCALAPPDATA%\gocloc\bin`; no administrator privileges are needed.
@@ -53,7 +52,7 @@ The installer does not change your PATH or execution policy. If scripts are bloc
 To select a release and/or installation directory:
 
 ```powershell
-.\gocloc-install.ps1 -Version vX.Y.Z -InstallDir "$env:LOCALAPPDATA\gocloc\bin"
+& ([scriptblock]::Create((Invoke-RestMethod https://raw.githubusercontent.com/rustyllh/gocloc/master/install.ps1 -ErrorAction Stop))) -Version vX.Y.Z -InstallDir "$env:LOCALAPPDATA\gocloc\bin"
 ```
 
 Replace `vX.Y.Z` with a published release tag. Run the installer again to upgrade; downloads and checksums are verified before replacing the existing binary.
