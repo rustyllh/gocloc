@@ -47,8 +47,10 @@ if ($Child) {
             }
         }
     }
+    # Help returns without setting an exit code; failures must reach the parent.
+    $LASTEXITCODE = 0
     & (Join-Path $repoDir 'install.ps1') -Version $Version -InstallDir $InstallDir -Help:($Scenario -eq 'help')
-    exit 0
+    exit $LASTEXITCODE
 }
 
 if (-not $BinaryPath) { throw 'Supply -BinaryPath pointing to a locally built Windows gocloc.exe' }
