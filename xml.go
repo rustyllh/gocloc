@@ -3,6 +3,8 @@ package gocloc
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
+	"os"
 )
 
 // XMLResultType is the result type in XML format.
@@ -51,10 +53,27 @@ type XMLResult struct {
 
 // Encode outputs XMLResult in a human readable format.
 func (x *XMLResult) Encode() {
-	if output, err := xml.MarshalIndent(x, "", "  "); err == nil {
-		fmt.Printf(xml.Header)
-		fmt.Println(string(output))
+	if err := x.EncodeTo(os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
+}
+
+// EncodeTo writes XML to w without changing the process's standard streams.
+func (x *XMLResult) EncodeTo(w io.Writer) error {
+	output, err := xml.MarshalIndent(x, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode XML: %w", err)
+	}
+	data := append([]byte(xml.Header), output...)
+	data = append(data, '\n')
+	n, err := w.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return fmt.Errorf("write XML: %w", err)
+	}
+	return nil
 }
 
 // NewXMLResultFromCloc returns XMLResult with default data set.

@@ -252,6 +252,12 @@ gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.744s user 0.823
 
 ## Development
 
+Statistical output is written to stdout; warnings and `--debug` logs are written to stderr.
+Unreadable files are reported and skipped while the remaining files are analyzed.
+For example, `gocloc --debug --output-type=json . > counts.json 2> diagnostics.log` keeps JSON parseable.
+Library callers can set `ClocOptions.Diagnostics` to an `io.Writer` (nil defaults to stderr;
+use `io.Discard` to silence diagnostics). Existing `AnalyzeFile`/`AnalyzeReader` signatures are unchanged.
+
 Run the cross-platform unit and CLI integration suite with `go test -race -tags=integration ./...`.
 Releases are gated by source, installer and packaged-binary checks; see [release verification](docs/releasing.md).
 For repeatable local measurements and CI reports, see [reproducible benchmarks](docs/benchmarking.md).

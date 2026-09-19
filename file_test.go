@@ -3,12 +3,61 @@ package gocloc
 import (
 	"bytes"
 	"crypto/md5"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+type failingSourceReader struct{ err error }
+
+func (r failingSourceReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestAnalyzeReaderReportsReadFailure(t *testing.T) {
+	failure := errors.New("injected read failure")
+	var diagnostics bytes.Buffer
+	reader := io.MultiReader(strings.NewReader("package main\n"), failingSourceReader{err: failure})
+	opts := &ClocOptions{Diagnostics: &diagnostics}
+	result := AnalyzeReader("sample.go", NewDefinedLanguages().Langs["Go"], reader, opts)
+	if result.Code != 1 || !strings.Contains(diagnostics.String(), "injected read failure") {
+		t.Fatalf("result=%+v diagnostics=%q", result, diagnostics.String())
+	}
+	if !strings.Contains(diagnostics.String(), "sample.go") || !strings.HasPrefix(diagnostics.String(), "warning:") {
+		t.Fatalf("diagnostic lacks source context: %s", diagnostics.String())
+	}
+}
+
+func TestAnalyzeFileReportsOpenFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.go")
+	var diagnostics bytes.Buffer
+	result := AnalyzeFile(path, NewDefinedLanguages().Langs["Go"], &ClocOptions{Diagnostics: &diagnostics})
+	if result.Name != path || result.Code != 0 || !strings.Contains(diagnostics.String(), path) {
+		t.Fatalf("result=%+v diagnostics=%q", result, diagnostics.String())
+	}
+}
+
+func TestDetectAndAnalyzeFileDistinguishesFailureFromExclusion(t *testing.T) {
+	dir := t.TempDir()
+	unknown := filepath.Join(dir, "unknown.xyz")
+	if err := os.WriteFile(unknown, []byte("unrecognized\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	languages := NewDefinedLanguages()
+	for _, skip := range []bool{false, true} {
+		opts := &ClocOptions{SkipDuplicated: skip}
+		missing := detectAndAnalyzeFile(fileCandidate{path: filepath.Join(dir, "missing.go")}, languages, opts)
+		if !errors.Is(missing.err, os.ErrNotExist) {
+			t.Fatalf("missing file error=%v", missing.err)
+		}
+		ignored := detectAndAnalyzeFile(fileCandidate{path: unknown}, languages, opts)
+		if ignored.err != nil || !ignored.ignored {
+			t.Fatalf("unknown file must be an exclusion, not an error: %+v", ignored)
+		}
+	}
+}
 
 func TestDetectAndAnalyzeFile(t *testing.T) {
 	for _, tc := range []struct {
@@ -35,7 +84,7 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 			langs := NewDefinedLanguages()
 			ext, recognized := getFileType(path, opts)
 			key, known := Exts[ext]
-			got := detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts)
+			got := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts)
 			if !recognized || !known {
 				if !got.ignored {
 					t.Fatal("unknown language was accepted")
@@ -50,7 +99,7 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 				t.Fatal("digest must include the detection prefix exactly once")
 			}
 			opts.SkipDuplicated = true
-			withoutHash := detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts)
+			withoutHash := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts)
 			if withoutHash.ignored || !reflect.DeepEqual(withoutHash.clocFile, want) {
 				t.Fatalf("skip-duplicated result = %+v, want %+v", withoutHash.clocFile, want)
 			}
@@ -58,35 +107,15 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 				t.Fatal("skip-duplicated must not compute a digest")
 			}
 			opts.ExcludeExts[key] = struct{}{}
-			if !detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts).ignored {
+			if !detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts).ignored {
 				t.Fatal("excluded language was accepted")
 			}
 			delete(opts.ExcludeExts, key)
 			opts.IncludeLangs["not-a-language"] = struct{}{}
-			if !detectAndAnalyzeFile(md5Candidate{path: path}, langs, opts).ignored {
+			if !detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts).ignored {
 				t.Fatal("language outside include filter was accepted")
 			}
 		})
-	}
-}
-
-func TestAnalyzeFileAndHash(t *testing.T) {
-	content := []byte("package sample\n// comment\n\nfunc main() {}\n")
-	path := filepath.Join(t.TempDir(), "sample.go")
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	language := NewLanguage("Go", []string{"//"}, [][]string{{"/*", "*/"}})
-	clocFile, digest, ignored := analyzeFileAndHash(path, language, NewClocOptions())
-	if ignored {
-		t.Fatal("analyzeFileAndHash() ignored a readable file")
-	}
-	if want := md5.Sum(content); digest != want {
-		t.Fatalf("digest = %x, want %x", digest, want)
-	}
-	if clocFile.Code != 2 || clocFile.Comments != 1 || clocFile.Blanks != 1 {
-		t.Fatalf("counts = (%d, %d, %d), want (2, 1, 1)", clocFile.Code, clocFile.Comments, clocFile.Blanks)
 	}
 }
 

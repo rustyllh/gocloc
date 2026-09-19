@@ -209,8 +209,15 @@ func TestCLIIntegration(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				after, newStderr, newErr := runCLI(binary, dir, tc.args)
-				if newErr != nil || newStderr != "" || after == "" {
+				if newErr != nil || after == "" {
 					t.Fatalf("run CLI: %v, stdout: %q, stderr: %q", newErr, after, newStderr)
+				}
+				if tc.name == "debug" {
+					if !strings.Contains(newStderr, "filename=") || strings.Contains(after, "filename=") {
+						t.Fatalf("debug logs must be on stderr: stdout=%q stderr=%q", after, newStderr)
+					}
+				} else if newStderr != "" {
+					t.Fatalf("unexpected diagnostics: %s", newStderr)
 				}
 				if baseline == "" {
 					return
@@ -223,6 +230,12 @@ func TestCLIIntegration(t *testing.T) {
 					// Extension order comes from a map and varies even between legacy runs.
 					before = normalizeLanguageExtensions(before)
 					after = normalizeLanguageExtensions(after)
+				}
+				if tc.name == "debug" {
+					// Debug text is unchanged, but now precedes the report on stderr
+					// rather than corrupting the statistical output on stdout.
+					after = newStderr + after
+					newStderr = ""
 				}
 				if before != after || oldStderr != newStderr {
 					t.Fatalf("output changed\nbefore:\n%s\n%s\nafter:\n%s\n%s", before, oldStderr, after, newStderr)

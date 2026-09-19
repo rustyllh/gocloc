@@ -3,7 +3,9 @@ package gocloc
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -374,38 +376,36 @@ func getShebang(line string) (shebangLang string, ok bool) {
 	return "", false
 }
 
-func getFileTypeByShebang(path string) (shebangLang string, ok bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		return // ignore error
-	}
-	defer f.Close()
-
-	reader := bufio.NewReader(f)
-	line, err := reader.ReadBytes('\n')
-	if err != nil {
-		return
-	}
-	line = bytes.TrimLeftFunc(line, unicode.IsSpace)
-
-	if len(line) > 2 && line[0] == '#' && line[1] == '!' {
-		return getShebang(string(line))
-	}
-	return
-}
-
 func getFileType(path string, opts *ClocOptions) (ext string, ok bool) {
-	return detectFileType(path, opts, func(all bool) ([]byte, error) {
+	var sourceErr error
+	ext, ok = detectFileType(path, opts, func(all bool) ([]byte, error) {
+		var content []byte
+		var err error
 		if all {
-			return os.ReadFile(path)
+			content, err = os.ReadFile(path)
+		} else {
+			var file *os.File
+			file, err = os.Open(path)
+			if err == nil {
+				content, err = bufio.NewReader(file).ReadBytes('\n')
+				closeErr := file.Close()
+				if errors.Is(err, io.EOF) && closeErr != nil {
+					err = closeErr
+				} else if closeErr != nil {
+					err = errors.Join(err, closeErr)
+				}
+			}
 		}
-		file, err := os.Open(path)
-		if err != nil {
-			return nil, err
+		if err != nil && !errors.Is(err, io.EOF) {
+			sourceErr = fmt.Errorf("read %q for language detection: %w", path, err)
 		}
-		defer file.Close()
-		return bufio.NewReader(file).ReadBytes('\n')
+		return content, err
 	})
+	if sourceErr != nil {
+		opts.warn(sourceErr)
+		return "", false
+	}
+	return ext, ok
 }
 
 // detectFileType preserves filename and shebang precedence while allowing callers
@@ -422,7 +422,7 @@ func detectFileType(path string, opts *ClocOptions, readContent func(bool) ([]by
 		}
 		lang := enry.GetLanguage(path, content)
 		if opts.Debug {
-			fmt.Printf("path=%v, lang=%v\n", path, lang)
+			opts.diagnosticf("path=%v, lang=%v\n", path, lang)
 		}
 		return lang, true
 	case ".mo":
@@ -432,7 +432,7 @@ func detectFileType(path string, opts *ClocOptions, readContent func(bool) ([]by
 		}
 		lang := enry.GetLanguage(path, content)
 		if opts.Debug {
-			fmt.Printf("path=%v, lang=%v\n", path, lang)
+			opts.diagnosticf("path=%v, lang=%v\n", path, lang)
 		}
 		if lang != "" {
 			return "Motoko", true

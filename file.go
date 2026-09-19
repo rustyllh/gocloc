@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -59,33 +60,44 @@ func (cf ClocFiles) SortByCode() {
 	sort.Slice(cf, sortFunc)
 }
 
-// AnalyzeFile is analyzing file, this function calls AnalyzeReader() inside.
+// AnalyzeFile analyzes a file and reports failures through opts.Diagnostics.
+// Its signature is retained for callers; Processor excludes failed files.
 func AnalyzeFile(filename string, language *Language, opts *ClocOptions) *ClocFile {
-	fp, err := os.Open(filename)
-	if err != nil {
-		// ignore error
+	opts = opts.withDiagnostics()
+	file, err := analyzeFile(filename, language, opts)
+	opts.warn(err)
+	if file == nil {
 		return &ClocFile{Name: filename}
 	}
-	defer fp.Close()
+	return file
+}
 
-	return AnalyzeReader(filename, language, fp, opts)
+func analyzeFile(filename string, language *Language, opts *ClocOptions) (*ClocFile, error) {
+	fp, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	file, readErr := analyzeReader(filename, language, fp, opts)
+	return file, errors.Join(readErr, fp.Close())
 }
 
 type hashingReader struct {
 	reader io.Reader
 	hash   hash.Hash
-	err    error
 }
 
 // detectAndAnalyzeFile reuses the detection prefix for line analysis and, when
 // deduplication is enabled, hashes physical reads once. Workers bound open files.
-func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, opts *ClocOptions) md5Result {
-	result := md5Result{md5Candidate: candidate, ignored: true}
+func detectAndAnalyzeFile(candidate fileCandidate, languages *DefinedLanguages, opts *ClocOptions) (result fileAnalysisResult) {
+	result = fileAnalysisResult{fileCandidate: candidate, ignored: true}
 	file, err := os.Open(candidate.path)
 	if err != nil {
+		result.err = err
 		return result
 	}
-	defer file.Close()
+	defer func() {
+		result.err = errors.Join(result.err, file.Close())
+	}()
 
 	var source io.Reader = file
 	var hashed *hashingReader
@@ -95,6 +107,7 @@ func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, o
 	}
 	reader := bufio.NewReader(source)
 	var prefix []byte
+	var detectionErr error
 	ext, ok := detectFileType(candidate.path, opts, func(all bool) ([]byte, error) {
 		var readErr error
 		if all {
@@ -102,8 +115,15 @@ func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, o
 		} else {
 			prefix, readErr = reader.ReadBytes('\n')
 		}
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			detectionErr = fmt.Errorf("read %q for language detection: %w", candidate.path, readErr)
+		}
 		return prefix, readErr
 	})
+	if detectionErr != nil {
+		result.err = detectionErr
+		return result
+	}
 	if !ok {
 		return result
 	}
@@ -111,21 +131,16 @@ func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, o
 	if !ok {
 		return result
 	}
-	if _, excluded := opts.ExcludeExts[languageKey]; excluded {
+	if !includeLanguage(languageKey, opts) {
 		return result
-	}
-	if len(opts.IncludeLangs) != 0 {
-		if _, included := opts.IncludeLangs[languageKey]; !included {
-			return result
-		}
 	}
 	result.languageKey = languageKey
 	content := io.MultiReader(bytes.NewReader(prefix), reader)
-	result.clocFile = AnalyzeReader(candidate.path, languages.Langs[languageKey], content, opts)
+	result.clocFile, result.err = analyzeReader(candidate.path, languages.Langs[languageKey], content, opts)
+	if result.err != nil {
+		return result
+	}
 	if hashed != nil {
-		if hashed.err != nil {
-			return result
-		}
 		copy(result.digest[:], hashed.hash.Sum(nil))
 	}
 	result.ignored = false
@@ -135,35 +150,25 @@ func detectAndAnalyzeFile(candidate md5Candidate, languages *DefinedLanguages, o
 func (r *hashingReader) Read(p []byte) (int, error) {
 	n, err := r.reader.Read(p)
 	if n > 0 {
-		_, _ = r.hash.Write(p[:n])
-	}
-	if err != nil && err != io.EOF {
-		r.err = err
+		if _, hashErr := r.hash.Write(p[:n]); hashErr != nil {
+			return n, hashErr
+		}
 	}
 	return n, err
 }
 
-func analyzeFileAndHash(filename string, language *Language, opts *ClocOptions) (clocFile *ClocFile, digest [md5.Size]byte, ignored bool) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return &ClocFile{Name: filename}, digest, true
-	}
-	defer file.Close()
-
-	hasher := md5.New()
-	reader := &hashingReader{reader: file, hash: hasher}
-	clocFile = AnalyzeReader(filename, language, reader, opts)
-	if reader.err != nil {
-		return clocFile, digest, true
-	}
-	copy(digest[:], hasher.Sum(nil))
-	return clocFile, digest, false
+// AnalyzeReader counts lines and reports read failures through opts.Diagnostics.
+// Partial counts are returned for compatibility; Processor excludes failed files.
+func AnalyzeReader(filename string, language *Language, file io.Reader, opts *ClocOptions) *ClocFile {
+	opts = opts.withDiagnostics()
+	result, err := analyzeReader(filename, language, file, opts)
+	opts.warn(err)
+	return result
 }
 
-// AnalyzeReader is analyzing file for io.Reader.
-func AnalyzeReader(filename string, language *Language, file io.Reader, opts *ClocOptions) *ClocFile {
+func analyzeReader(filename string, language *Language, file io.Reader, opts *ClocOptions) (*ClocFile, error) {
 	if opts.Debug {
-		fmt.Printf("filename=%v\n", filename)
+		opts.diagnosticf("filename=%v\n", filename)
 	}
 
 	clocFile := &ClocFile{
@@ -178,9 +183,8 @@ func AnalyzeReader(filename string, language *Language, file io.Reader, opts *Cl
 scannerloop:
 	for {
 		lineOrg, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			fmt.Printf("ERROR - could not read file (-> skip): %v\n", err)
-			break
+		if err != nil && !errors.Is(err, io.EOF) {
+			return clocFile, fmt.Errorf("read %q: %w", filename, err)
 		}
 
 		// prevent infinite loop
@@ -296,7 +300,7 @@ scannerloop:
 		}
 	}
 
-	return clocFile
+	return clocFile, nil
 }
 
 func onBlank(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg string) {
@@ -306,7 +310,7 @@ func onBlank(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lin
 	}
 
 	if opts.Debug {
-		fmt.Printf("[BLNK, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
+		opts.diagnosticf("[BLNK, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
 			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
 	}
 }
@@ -318,7 +322,7 @@ func onComment(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, l
 	}
 
 	if opts.Debug {
-		fmt.Printf("[COMM, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
+		opts.diagnosticf("[COMM, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
 			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
 	}
 }
@@ -330,7 +334,7 @@ func onCode(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, line
 	}
 
 	if opts.Debug {
-		fmt.Printf("[CODE, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
+		opts.diagnosticf("[CODE, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
 			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
 	}
 }

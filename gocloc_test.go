@@ -1,6 +1,8 @@
 package gocloc
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -39,7 +41,7 @@ func TestResolveWorkerCount(t *testing.T) {
 	})
 }
 
-func TestAnalyzeFilesWorkersProducesEquivalentResults(t *testing.T) {
+func TestProcessorAnalyzeWorkersProducesEquivalentResults(t *testing.T) {
 	dir := t.TempDir()
 	goFile := filepath.Join(dir, "main.go")
 	pythonFile := filepath.Join(dir, "script.py")
@@ -50,10 +52,10 @@ func TestAnalyzeFilesWorkersProducesEquivalentResults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	serialLanguages := testLanguages(goFile, pythonFile)
-	serialFiles := analyzeFiles(serialLanguages, &ClocOptions{Workers: 1})
-	parallelLanguages := testLanguages(goFile, pythonFile)
-	parallelFiles := analyzeFiles(parallelLanguages, &ClocOptions{Workers: 2})
+	serial := analyzeDirectory(t, dir, &ClocOptions{Workers: 1})
+	parallel := analyzeDirectory(t, dir, &ClocOptions{Workers: 2})
+	serialLanguages, serialFiles := serial.Languages, serial.Files
+	parallelLanguages, parallelFiles := parallel.Languages, parallel.Files
 
 	assertAnalysisCounts(t, serialLanguages, serialFiles)
 	assertAnalysisCounts(t, parallelLanguages, parallelFiles)
@@ -91,36 +93,39 @@ func TestProcessorAnalyzeWorkersPreservesDuplicateBehavior(t *testing.T) {
 	}
 }
 
-func TestAnalyzeFilesCallbacksUseSerialOrder(t *testing.T) {
+func TestProcessorCallbacksPreserveOrderAndDeduplication(t *testing.T) {
 	dir := t.TempDir()
-	firstFile := filepath.Join(dir, "first.go")
-	secondFile := filepath.Join(dir, "second.go")
-	for file, content := range map[string]string{firstFile: "package first\n", secondFile: "package second\n"} {
-		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+	first := "package first\n// first\n\n"
+	second := "package second\n// second\n\n"
+	for name, content := range map[string]string{"a.go": first, "b.go": first, "c.go": second} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-
-	language := NewLanguage("Go", []string{"//"}, [][]string{{"/*", "*/"}})
-	language.Files = []string{firstFile, secondFile}
-	var callbackLines []string
-	analyzeFiles(map[string]*Language{"Go": language}, &ClocOptions{
-		Workers: 2,
-		OnCode: func(line string) {
-			callbackLines = append(callbackLines, line)
-		},
-	})
-	if len(callbackLines) != 2 || callbackLines[0] != "package first" || callbackLines[1] != "package second" {
-		t.Fatalf("callback lines = %q, want [package first package second]", callbackLines)
+	for _, skip := range []bool{false, true} {
+		for _, debug := range []bool{false, true} {
+			t.Run(fmt.Sprintf("skip=%t/debug=%t", skip, debug), func(t *testing.T) {
+				lines := []string{}
+				opts := &ClocOptions{
+					Workers: 8, SkipDuplicated: skip, Debug: debug, Diagnostics: io.Discard,
+					OnCode:    func(line string) { lines = append(lines, "code:"+line) },
+					OnComment: func(line string) { lines = append(lines, "comment:"+line) },
+					OnBlank:   func(line string) { lines = append(lines, "blank:"+line) },
+				}
+				result := analyzeDirectory(t, dir, opts)
+				want := []string{"code:package first", "comment:// first", "blank:"}
+				files := int32(2)
+				if skip {
+					want = append(want, want...)
+					files = 3
+				}
+				want = append(want, "code:package second", "comment:// second", "blank:")
+				if !reflect.DeepEqual(lines, want) || result.Total.Total != files {
+					t.Fatalf("callbacks=%q total=%+v, want %q (%d files)", lines, result.Total, want, files)
+				}
+			})
+		}
 	}
-}
-
-func testLanguages(goFile, pythonFile string) map[string]*Language {
-	goLanguage := NewLanguage("Go", []string{"//"}, [][]string{{"/*", "*/"}})
-	goLanguage.Files = []string{goFile}
-	pythonLanguage := NewLanguage("Python", []string{"#"}, [][]string{{"\"\"\"", "\"\"\""}})
-	pythonLanguage.Files = []string{pythonFile}
-	return map[string]*Language{"Go": goLanguage, "Python": pythonLanguage}
 }
 
 func assertAnalysisCounts(t *testing.T, languages map[string]*Language, files map[string]*ClocFile) {

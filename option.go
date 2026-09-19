@@ -1,6 +1,9 @@
 package gocloc
 
-import "regexp"
+import (
+	"io"
+	"regexp"
+)
 
 // MaxWorkers limits fixed worker configurations to a bounded resource footprint.
 const MaxWorkers = 64
@@ -18,9 +21,15 @@ type ClocOptions struct {
 	Fullpath       bool
 	Workers        int
 
+	// Diagnostics receives warnings and debug logs, never statistical output.
+	// Nil uses os.Stderr; io.Discard silences diagnostics. Processor.Analyze
+	// serializes writes within a scan, including writes from traversal and workers.
+	Diagnostics io.Writer
+	diagnostics *diagnosticSink
+
 	// OnCode is triggered for each line of code.
 	OnCode func(line string)
-	// OnBlack is triggered for each blank line.
+	// OnBlank is triggered for each blank line.
 	OnBlank func(line string)
 	// OnComment is triggered for each line of comments.
 	OnComment func(line string)
