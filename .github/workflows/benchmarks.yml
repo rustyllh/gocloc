@@ -1,0 +1,49 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    # Report only: shared-runner timings are not a release performance gate.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+      GOMAXPROCS: '8'
+      BENCHTIME: 200ms
+      BENCH_COUNT: '6'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          # Keep the toolchain fixed for comparisons; update it deliberately.
+          go-version: '1.26.6'
+          cache: true
+      - name: Run deterministic benchmarks
+        run: bash scripts/benchmark.sh benchmark-results/current
+      - name: Add benchmark summary
+        shell: bash
+        run: |
+          {
+            printf '## Fixture benchmark results\n\n'
+            printf 'Report only; compare on the same hardware and toolchain.\n\n'
+            printf '```text\n'
+            cat benchmark-results/current/summary.txt
+            printf '\n```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve raw samples and environment
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmarks-${{ github.sha }}-${{ github.run_attempt }}
+          path: benchmark-results/current/
+          if-no-files-found: warn
+          retention-days: 30

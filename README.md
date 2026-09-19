@@ -250,5 +250,11 @@ TOTAL                        13995         310202         509643        2924932
 gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.744s user 0.823s system 603.4% cpu 0.260 total
 ```
 
+## Development
+
+Run the cross-platform unit and CLI integration suite with `go test -race -tags=integration ./...`.
+Releases are gated by source, installer and packaged-binary checks; see [release verification](docs/releasing.md).
+For repeatable local measurements and CI reports, see [reproducible benchmarks](docs/benchmarking.md).
+
 ## License
 MIT

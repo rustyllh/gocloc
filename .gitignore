@@ -15,3 +15,4 @@ docs/superpowers
 *.pprof
 trace*.out
 gocloc.test
+/benchmark-results/

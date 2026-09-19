@@ -16,11 +16,7 @@ import (
 )
 
 func TestCLIIntegration(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "gocloc")
-	build := exec.Command("go", "build", "-o", binary, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build CLI: %v\n%s", err, output)
-	}
+	binary := integrationBinary(t)
 	dir := t.TempDir()
 	for name, content := range map[string]string{
 		"src/main.go":         "package sample\n// comment\n\nfunc main() {}\n",
@@ -53,7 +49,7 @@ func TestCLIIntegration(t *testing.T) {
 			{name: "include directory", args: []string{"--match-d=scripts", "."}, files: 1, code: 4},
 			{name: "include filename", args: []string{`--match=\.py$`, "."}, files: 1, code: 4},
 			{name: "exclude filename", args: []string{`--not-match=\.py$`, "."}, files: 2, code: 3},
-			{name: "fullpath", args: []string{"--fullpath", "--match=^scripts/", "."}, files: 1, code: 4},
+			{name: "fullpath", args: []string{"--fullpath", `--match=^scripts[/\\]`, "."}, files: 1, code: 4},
 			{name: "exclude extension", args: []string{"--exclude-ext=go,txt", "."}, files: 1, code: 4},
 			{name: "include languages", args: []string{"--include-lang=Python,JSON", "."}, files: 1, code: 4},
 		} {
@@ -185,7 +181,7 @@ func TestCLIIntegration(t *testing.T) {
 			{name: "decimal leading zero", args: []string{"--workers=08", "."}},
 			{name: "interspersed", args: []string{"src", "--workers", "2", "scripts"}},
 			{name: "exclude extensions", args: []string{"--exclude-ext=py,txt", "."}},
-			{name: "fullpath", args: []string{"--fullpath", "--match=^scripts/", "."}},
+			{name: "fullpath", args: []string{"--fullpath", `--match=^scripts[/\\]`, "."}},
 			{name: "include directory", args: []string{"--match-d=src", "."}},
 			{name: "exclude name", args: []string{`--not-match=\.py$`, "."}},
 			{name: "repeated option", args: []string{"--include-lang=Go", "--include-lang=Python", "."}},
