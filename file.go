@@ -1,7 +1,6 @@
 package gocloc
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/md5"
 	"errors"
@@ -10,8 +9,8 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ClocFile is collecting to line count result.
@@ -88,7 +87,12 @@ type hashingReader struct {
 
 // detectAndAnalyzeFile reuses the detection prefix for line analysis and, when
 // deduplication is enabled, hashes physical reads once. Workers bound open files.
-func detectAndAnalyzeFile(candidate fileCandidate, languages *DefinedLanguages, opts *ClocOptions) (result fileAnalysisResult) {
+func detectAndAnalyzeFile(
+	candidate fileCandidate,
+	languages *DefinedLanguages,
+	opts *ClocOptions,
+	reader *lineReader,
+) (result fileAnalysisResult) {
 	result = fileAnalysisResult{fileCandidate: candidate, ignored: true}
 	file, err := os.Open(candidate.path)
 	if err != nil {
@@ -105,15 +109,16 @@ func detectAndAnalyzeFile(candidate fileCandidate, languages *DefinedLanguages, 
 		hashed = &hashingReader{reader: file, hash: md5.New()}
 		source = hashed
 	}
-	reader := bufio.NewReader(source)
+	reader.reset(source)
+	defer reader.release()
 	var prefix []byte
 	var detectionErr error
 	ext, ok := detectFileType(candidate.path, opts, func(all bool) ([]byte, error) {
 		var readErr error
 		if all {
-			prefix, readErr = io.ReadAll(reader)
+			prefix, readErr = io.ReadAll(reader.reader)
 		} else {
-			prefix, readErr = reader.ReadBytes('\n')
+			prefix, readErr = reader.next()
 		}
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			detectionErr = fmt.Errorf("read %q for language detection: %w", candidate.path, readErr)
@@ -135,8 +140,15 @@ func detectAndAnalyzeFile(candidate fileCandidate, languages *DefinedLanguages, 
 		return result
 	}
 	result.languageKey = languageKey
-	content := io.MultiReader(bytes.NewReader(prefix), reader)
-	result.clocFile, result.err = analyzeReader(candidate.path, languages.Langs[languageKey], content, opts)
+	// Detection's bytes are consumed before the next physical read; replaying
+	// them requires neither another buffered reader nor another hash update.
+	reader.prefix = prefix
+	result.clocFile, result.err = analyzeLines(
+		candidate.path,
+		languages.Langs[languageKey],
+		reader,
+		opts,
+	)
 	if result.err != nil {
 		return result
 	}
@@ -167,6 +179,15 @@ func AnalyzeReader(filename string, language *Language, file io.Reader, opts *Cl
 }
 
 func analyzeReader(filename string, language *Language, file io.Reader, opts *ClocOptions) (*ClocFile, error) {
+	return analyzeLines(
+		filename,
+		language,
+		newLineReader(file),
+		opts,
+	)
+}
+
+func analyzeLines(filename string, language *Language, reader *lineReader, opts *ClocOptions) (*ClocFile, error) {
 	if opts.Debug {
 		opts.diagnosticf("filename=%v\n", filename)
 	}
@@ -177,12 +198,13 @@ func analyzeReader(filename string, language *Language, file io.Reader, opts *Cl
 	}
 
 	isFirstLine := true
-	var inComments [][2]string
-	reader := bufio.NewReader(file)
+	inComments := [][2]string{}
+	// Reuse flags for every multiline-comment row instead of allocating per row.
+	codeFlags := make([]bool, len(language.multiLines))
 
 scannerloop:
 	for {
-		lineOrg, err := reader.ReadString('\n')
+		lineOrg, err := reader.next()
 		if err != nil && !errors.Is(err, io.EOF) {
 			return clocFile, fmt.Errorf("read %q: %w", filename, err)
 		}
@@ -192,78 +214,122 @@ scannerloop:
 			break
 		}
 
-		line := strings.TrimSpace(lineOrg)
+		line := bytes.TrimSpace(lineOrg)
 
 		if len(line) == 0 {
-			onBlank(clocFile, opts, len(inComments) > 0, line, lineOrg)
+			onBlank(
+				clocFile,
+				opts,
+				len(inComments) > 0,
+				line,
+				lineOrg,
+			)
 			continue
 		}
 
 		// shebang line is 'code'
-		if isFirstLine && strings.HasPrefix(line, "#!") {
-			onCode(clocFile, opts, len(inComments) > 0, line, lineOrg)
+		if isFirstLine && bytes.HasPrefix(line, []byte("#!")) {
+			onCode(
+				clocFile,
+				opts,
+				len(inComments) > 0,
+				line,
+				lineOrg,
+			)
 			isFirstLine = false
 			continue
 		}
 
 		if len(inComments) == 0 {
 			if isFirstLine {
-				line = trimBOM(line)
+				line = bytes.TrimPrefix(line, []byte("\xef\xbb\xbf"))
 			}
 
 			if len(language.regexLineComments) > 0 {
 			singleloopRegex:
 				for _, singleCommentRegex := range language.regexLineComments {
-					if singleCommentRegex.MatchString(line) {
+					if singleCommentRegex.Match(line) {
 						// check if single comment is a prefix of multi comment
 						for _, ml := range language.multiLines {
-							if ml[0] != "" && strings.HasPrefix(line, ml[0]) {
+							if ml[0] != "" && bytes.HasPrefix(line, []byte(ml[0])) {
 								break singleloopRegex
 							}
 						}
-						onComment(clocFile, opts, len(inComments) > 0, line, lineOrg)
+						onComment(
+							clocFile,
+							opts,
+							len(inComments) > 0,
+							line,
+							lineOrg,
+						)
 						continue scannerloop
 					}
 				}
 			} else {
 			singleloop:
 				for _, singleComment := range language.lineComments {
-					if strings.HasPrefix(line, singleComment) {
+					if bytes.HasPrefix(line, []byte(singleComment)) {
 						// check if single comment is a prefix of multi comment
 						for _, ml := range language.multiLines {
-							if ml[0] != "" && strings.HasPrefix(line, ml[0]) {
+							if ml[0] != "" && bytes.HasPrefix(line, []byte(ml[0])) {
 								break singleloop
 							}
 						}
-						onComment(clocFile, opts, len(inComments) > 0, line, lineOrg)
+						onComment(
+							clocFile,
+							opts,
+							len(inComments) > 0,
+							line,
+							lineOrg,
+						)
 						continue scannerloop
 					}
 				}
 			}
 
 			if len(language.multiLines) == 0 {
-				onCode(clocFile, opts, len(inComments) > 0, line, lineOrg)
+				onCode(
+					clocFile,
+					opts,
+					len(inComments) > 0,
+					line,
+					lineOrg,
+				)
 				continue scannerloop
 			}
 		}
 
-		if len(inComments) == 0 && !containsComment(line, language.multiLines) {
-			onCode(clocFile, opts, len(inComments) > 0, line, lineOrg)
+		if len(inComments) == 0 && !containsCommentBytes(line, language.multiLines) {
+			onCode(
+				clocFile,
+				opts,
+				len(inComments) > 0,
+				line,
+				lineOrg,
+			)
 			continue scannerloop
 		}
 
 		lenLine := len(line)
-		if len(language.multiLines) == 1 && len(language.multiLines[0]) == 2 && language.multiLines[0][0] == "" {
-			onCode(clocFile, opts, len(inComments) > 0, line, lineOrg)
+		singleDelimiter := len(language.multiLines) == 1 && len(language.multiLines[0]) == 2
+		if singleDelimiter && language.multiLines[0][0] == "" {
+			onCode(
+				clocFile,
+				opts,
+				len(inComments) > 0,
+				line,
+				lineOrg,
+			)
 			continue
 		}
-		codeFlags := make([]bool, len(language.multiLines))
+		clear(codeFlags)
 		for pos := 0; pos < lenLine; {
 			for idx, ml := range language.multiLines {
 				begin, end := ml[0], ml[1]
 				lenBegin := len(begin)
 
-				if pos+lenBegin <= lenLine && strings.HasPrefix(line[pos:], begin) && (begin != end || len(inComments) == 0) {
+				hasBegin := pos+lenBegin <= lenLine && bytes.HasPrefix(line[pos:], []byte(begin))
+				if hasBegin && (begin != end || len(inComments) == 0) {
 					pos += lenBegin
 					inComments = append(inComments, [2]string{begin, end})
 					continue
@@ -271,12 +337,15 @@ scannerloop:
 
 				if n := len(inComments); n > 0 {
 					last := inComments[n-1]
-					if pos+len(last[1]) <= lenLine && strings.HasPrefix(line[pos:], last[1]) {
+					if pos+len(last[1]) <= lenLine && bytes.HasPrefix(line[pos:], []byte(last[1])) {
 						inComments = inComments[:n-1]
 						pos += len(last[1])
 					}
-				} else if pos < lenLine && !unicode.IsSpace(nextRune(line[pos:])) {
-					codeFlags[idx] = true
+				} else if pos < lenLine {
+					r, _ := utf8.DecodeRune(line[pos:])
+					if !unicode.IsSpace(r) {
+						codeFlags[idx] = true
+					}
 				}
 			}
 			pos++
@@ -290,9 +359,21 @@ scannerloop:
 		}
 
 		if isCode {
-			onCode(clocFile, opts, len(inComments) > 0, line, lineOrg)
+			onCode(
+				clocFile,
+				opts,
+				len(inComments) > 0,
+				line,
+				lineOrg,
+			)
 		} else {
-			onComment(clocFile, opts, len(inComments) > 0, line, lineOrg)
+			onComment(
+				clocFile,
+				opts,
+				len(inComments) > 0,
+				line,
+				lineOrg,
+			)
 		}
 
 		if err == io.EOF {
@@ -303,38 +384,40 @@ scannerloop:
 	return clocFile, nil
 }
 
-func onBlank(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg string) {
+// Materialize strings only for observers. Callback strings must outlive the
+// borrowed line buffer, which the next read (or next file) may overwrite.
+func onBlank(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg []byte) {
 	clocFile.Blanks++
 	if opts.OnBlank != nil {
-		opts.OnBlank(line)
+		opts.OnBlank(string(line))
 	}
 
 	if opts.Debug {
 		opts.diagnosticf("[BLNK, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
+			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, string(lineOrg))
 	}
 }
 
-func onComment(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg string) {
+func onComment(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg []byte) {
 	clocFile.Comments++
 	if opts.OnComment != nil {
-		opts.OnComment(line)
+		opts.OnComment(string(line))
 	}
 
 	if opts.Debug {
 		opts.diagnosticf("[COMM, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
+			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, string(lineOrg))
 	}
 }
 
-func onCode(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg string) {
+func onCode(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lineOrg []byte) {
 	clocFile.Code++
 	if opts.OnCode != nil {
-		opts.OnCode(line)
+		opts.OnCode(string(line))
 	}
 
 	if opts.Debug {
 		opts.diagnosticf("[CODE, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
+			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, string(lineOrg))
 	}
 }

@@ -231,9 +231,9 @@ func TestCLIIntegration(t *testing.T) {
 					before = normalizeLanguageExtensions(before)
 					after = normalizeLanguageExtensions(after)
 				}
-				if tc.name == "debug" {
-					// Debug text is unchanged, but now precedes the report on stderr
-					// rather than corrupting the statistical output on stdout.
+				if tc.name == "debug" && oldStderr == "" {
+					// Older baselines wrote debug text to stdout. Newer baselines
+					// already separate diagnostics, so compare both streams directly.
 					after = newStderr + after
 					newStderr = ""
 				}

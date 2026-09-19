@@ -46,13 +46,14 @@ func TestDetectAndAnalyzeFileDistinguishesFailureFromExclusion(t *testing.T) {
 		t.Fatal(err)
 	}
 	languages := NewDefinedLanguages()
+	reader := newLineReader(nil)
 	for _, skip := range []bool{false, true} {
 		opts := &ClocOptions{SkipDuplicated: skip}
-		missing := detectAndAnalyzeFile(fileCandidate{path: filepath.Join(dir, "missing.go")}, languages, opts)
+		missing := detectAndAnalyzeFile(fileCandidate{path: filepath.Join(dir, "missing.go")}, languages, opts, reader)
 		if !errors.Is(missing.err, os.ErrNotExist) {
 			t.Fatalf("missing file error=%v", missing.err)
 		}
-		ignored := detectAndAnalyzeFile(fileCandidate{path: unknown}, languages, opts)
+		ignored := detectAndAnalyzeFile(fileCandidate{path: unknown}, languages, opts, reader)
 		if ignored.err != nil || !ignored.ignored {
 			t.Fatalf("unknown file must be an exclusion, not an error: %+v", ignored)
 		}
@@ -82,9 +83,10 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 			}
 			opts := NewClocOptions()
 			langs := NewDefinedLanguages()
+			reader := newLineReader(nil)
 			ext, recognized := getFileType(path, opts)
 			key, known := Exts[ext]
-			got := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts)
+			got := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts, reader)
 			if !recognized || !known {
 				if !got.ignored {
 					t.Fatal("unknown language was accepted")
@@ -99,7 +101,7 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 				t.Fatal("digest must include the detection prefix exactly once")
 			}
 			opts.SkipDuplicated = true
-			withoutHash := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts)
+			withoutHash := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts, reader)
 			if withoutHash.ignored || !reflect.DeepEqual(withoutHash.clocFile, want) {
 				t.Fatalf("skip-duplicated result = %+v, want %+v", withoutHash.clocFile, want)
 			}
@@ -107,12 +109,12 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 				t.Fatal("skip-duplicated must not compute a digest")
 			}
 			opts.ExcludeExts[key] = struct{}{}
-			if !detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts).ignored {
+			if !detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts, reader).ignored {
 				t.Fatal("excluded language was accepted")
 			}
 			delete(opts.ExcludeExts, key)
 			opts.IncludeLangs["not-a-language"] = struct{}{}
-			if !detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts).ignored {
+			if !detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts, reader).ignored {
 				t.Fatal("language outside include filter was accepted")
 			}
 		})

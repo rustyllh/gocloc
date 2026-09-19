@@ -60,8 +60,14 @@ func scanAndAnalyzeFiles(paths []string, languages *DefinedLanguages, opts *Cloc
 		workerGroup.Add(1)
 		go func() {
 			defer workerGroup.Done()
+			reader := newLineReader(nil)
 			for candidate := range candidates {
-				results <- detectAndAnalyzeFile(candidate, languages, opts)
+				results <- detectAndAnalyzeFile(
+					candidate,
+					languages,
+					opts,
+					reader,
+				)
 			}
 		}()
 	}

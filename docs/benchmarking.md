@@ -85,6 +85,29 @@ go tool pprof -http=127.0.0.1:8080 cpu-fixture.pprof
 The CPU profile can also include untimed fixture setup and warm-up; use long runs and inspect the call tree.
 Collect a separate trace with `-trace=trace-fixture.out` if scheduling or I/O waits need investigation.
 
+### Line parsing and buffer reuse
+
+`BenchmarkAnalyzeReader` isolates in-memory line counting for ordinary code, block comments,
+and lines larger than 128 KiB. It excludes filesystem traversal, language detection, and hashing:
+
+```sh
+go test . -run '^$' -bench '^BenchmarkAnalyzeReader$' -benchmem -benchtime=300ms -count=6
+```
+
+The byte reader borrows ordinary lines from its buffer and reuses scratch space for long lines.
+Each worker owns its reader; language detection and counting share it. Callback strings remain
+independent copies, and oversized scratch buffers are released between files. On Go 1.26.6,
+darwin/arm64, the code and comment microbenchmarks dropped from 8,195 to 4 allocations per operation
+when replacing the string-based parser. Use the full fixture suite to measure end-to-end effects;
+these microbenchmarks do not represent whole-repository scan times.
+
+Regression tests compare counts, callback contents/order, and debug output against a frozen
+test-only reference parser. Run the differential fuzz target separately from timing measurements:
+
+```sh
+go test . -run '^$' -fuzz '^FuzzAnalyzeReaderMatchesReference$' -fuzztime=30s
+```
+
 ## Real repository benchmark
 
 The existing `BenchmarkProcessorAnalyze` remains available and skips unless given a path:
