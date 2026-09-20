@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+bin
+dist
+benchmark-results
+vendor
+*.pprof
+trace*.out
+coverage.out
+gocloc.test
+**/*_test.go

@@ -51,6 +51,10 @@ jobs:
             exit 1
           fi
 
+      - name: Test Docker release orchestration offline
+        if: matrix.os == 'ubuntu-latest'
+        run: bash scripts/test-docker-release.sh
+
       - name: Build with Makefile
         if: matrix.os != 'windows-latest'
         run: make build

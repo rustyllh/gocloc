@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Offline orchestration fixture, not a Docker engine or a runtime image test.
+set -euo pipefail
+printf '%s\n' "$*" >> "$GOCLOC_DOCKER_TEST_LOG"
+case "$1 $2" in
+    'buildx build')
+        context_dir=${!#}
+        arch=
+        target=
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --platform) arch=${2#linux/}; shift ;;
+                --target) target=$2; shift ;;
+            esac
+            shift
+        done
+        [[ "$target" == release ]]
+        [[ -f "$context_dir/LICENSE" ]]
+        [[ $(cat "$context_dir/$arch/gocloc") == "fixture-$arch" ]]
+        ;;
+    'image inspect')
+        image=${!#}
+        if [[ "$GOCLOC_DOCKER_TEST_FAILURE" == platform ]]; then
+            printf 'linux/386\n'
+        else
+            printf 'linux/%s\n' "${image##*:}"
+        fi
+        ;;
+    'run --rm')
+        if [[ " $* " == *' --version '* ]]; then
+            if [[ "$GOCLOC_DOCKER_TEST_FAILURE" == version ]]; then
+                printf '9.9.9 (fixture)\n'
+            else
+                printf '1.2.3 (fixture)\n'
+            fi
+        elif [[ "$GOCLOC_DOCKER_TEST_FAILURE" == statistics ]]; then
+            printf '{"total":{"files":0,"code":0}}\n'
+        elif [[ " $* " == *' --dedup '* ]]; then
+            printf '{"total":{"files":1,"code":1}}\n'
+        else
+            printf '{"total":{"files":2,"code":2}}\n'
+        fi
+        ;;
+    *)
+        printf 'Unexpected Docker command: %s\n' "$*" >&2
+        exit 1
+        ;;
+esac

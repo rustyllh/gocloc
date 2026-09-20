@@ -76,6 +76,28 @@ $ go install github.com/rustyllh/gocloc/cmd/gocloc@latest
 
 The AUR package [gocloc-git](https://aur.archlinux.org/packages/gocloc-git/) tracks upstream gocloc, not this optimized fork.
 
+### Docker
+
+Docker-enabled releases publish [rustyllh/gocloc](https://hub.docker.com/r/rustyllh/gocloc) for
+Linux `amd64` and `arm64`. Docker selects the matching architecture automatically.
+Mount the directory to scan at `/workdir` (read-only) and pass `.` to count it:
+
+```sh
+docker run --rm --read-only --mount "type=bind,source=$(pwd),target=/workdir,readonly" rustyllh/gocloc:latest .
+```
+
+Use `rustyllh/gocloc:vX.Y.Z` to pin a release. `latest` follows the last published stable release;
+prerelease tags do not update it. These images require Linux containers, including when using Docker Desktop.
+The usual CLI options work after the image name, for example `--dedup -o json .`.
+Images become available after the first Docker-enabled release; older tags do not gain images automatically.
+
+To build a local image from source (Docker Buildx required):
+
+```sh
+docker buildx build --load -t gocloc:local .
+docker run --rm gocloc:local --version
+```
+
 ## Usage
 
 ### Basic Usage
