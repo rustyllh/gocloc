@@ -20,13 +20,12 @@ env:
 
 jobs:
   build:
-    name: Go ${{ matrix.go }} (${{ matrix.os }})
+    name: Go stable (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.23.x', 'stable']
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
@@ -35,17 +34,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go }}
+          go-version: stable
           cache: true
 
       - name: Download modules
         run: go mod download
 
       - name: Check formatting and imports
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.23.x'
+        if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
-          # Pin a version that supports the minimum Go version without editing go.mod.
+          # Pin the formatter for consistent results without editing go.mod.
           format_diff=$(go run golang.org/x/tools/cmd/goimports@v0.24.0 -d .)
           if [ -n "$format_diff" ]; then
             printf '%s\n' "$format_diff"

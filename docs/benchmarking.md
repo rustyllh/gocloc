@@ -33,8 +33,8 @@ Four large files cannot occupy eight file workers simultaneously.
 ## Record and compare
 
 Run from the repository root with an idle machine, on AC power where applicable. Do not run builds,
-other benchmarks, or profilers concurrently. The tests support Go 1.23+, but the pinned report tool
-(`benchstat`) requires Go 1.26+. The report workflow pins Go 1.26.6.
+other benchmarks, or profilers concurrently. CI tests the latest stable Go release; the pinned report tool
+(`benchstat`) requires Go 1.26+. The report workflow keeps Go 1.26.6 pinned for reproducibility.
 
 ```sh
 bash scripts/benchmark.sh benchmark-results/before

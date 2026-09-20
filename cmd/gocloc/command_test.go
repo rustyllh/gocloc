@@ -284,6 +284,57 @@ func TestRootCommandInformation(t *testing.T) {
 	}
 }
 
+func TestRootCommandHelpExamples(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "long help", args: []string{"--help"}},
+		{name: "short help", args: []string{"-h"}},
+		{name: "no arguments", args: []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := newRootCommand()
+			var stdout, stderr bytes.Buffer
+			command.SetOut(&stdout)
+			command.SetErr(&stderr)
+			command.SetArgs(tc.args)
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("unexpected diagnostics: %s", stderr.String())
+			}
+			previousSection := -1
+			for _, section := range []string{"Usage:", "Flags:", "Examples:"} {
+				position := strings.Index(stdout.String(), section)
+				if position <= previousSection {
+					t.Fatalf("help sections must appear in order: Usage, Flags, Examples; got %q", stdout.String())
+				}
+				previousSection = position
+			}
+			if !strings.HasSuffix(stdout.String(), "  gocloc --dedup .\n") {
+				t.Fatal("examples must be the last help section")
+			}
+			for _, want := range []string{
+				"Examples:",
+				"  gocloc .\n",
+				"  gocloc src tests\n",
+				`  gocloc --not-match-d='(^|[/\\])(dist|node_modules|target)([/\\]|$)' .` + "\n",
+				"  gocloc -l Go,Python .\n",
+				"  gocloc -f -s code .\n",
+				"  gocloc -o json . > ../counts.json\n",
+				"  gocloc --dedup .\n",
+			} {
+				if !strings.Contains(stdout.String(), want) {
+					t.Errorf("help output is missing %q", want)
+				}
+			}
+		})
+	}
+}
+
 func workers(value int) *int {
 	return &value
 }

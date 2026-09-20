@@ -59,8 +59,28 @@ func newRootCommand() *cobra.Command {
 	var opts CmdOptions
 	var workerCount int
 	command := &cobra.Command{
-		Use:                "gocloc [OPTIONS] PATH[...]",
-		Short:              "A fast, parallel source code line counter",
+		Use:   "gocloc [OPTIONS] PATH[...]",
+		Short: "A fast, parallel source code line counter",
+		Example: `  # Count the current directory
+  gocloc .
+
+  # Count multiple directories
+  gocloc src tests
+
+  # Exclude dependency and build directories by name
+  gocloc --not-match-d='(^|[/\\])(dist|node_modules|target)([/\\]|$)' .
+
+  # Count only Go and Python files
+  gocloc -l Go,Python .
+
+  # Report each file, sorted by code lines
+  gocloc -f -s code .
+
+  # Export JSON outside the scanned directory
+  gocloc -o json . > ../counts.json
+
+  # Count identical contents only once
+  gocloc --dedup .`,
 		Args:               cobra.ArbitraryArgs,
 		SilenceErrors:      true,
 		SilenceUsage:       true,
@@ -95,6 +115,15 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	command.DisableFlagsInUseLine = true
+	command.SetUsageTemplate(`Usage:
+  {{.UseLine}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasExample}}
+
+Examples:
+{{.Example}}{{end}}
+`)
 	flags := command.Flags()
 	flags.SetInterspersed(true)
 	flags.BoolVarP(

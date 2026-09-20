@@ -68,7 +68,7 @@ verify it against the accompanying `gocloc_<version>_checksums.txt`, and extract
 
 ### Go install
 
-Requires Go 1.23+:
+Use the latest stable Go release, which is tested in CI:
 
 ```
 $ go install github.com/rustyllh/gocloc/cmd/gocloc@latest
@@ -79,6 +79,7 @@ The AUR package [gocloc-git](https://aur.archlinux.org/packages/gocloc-git/) tra
 ## Usage
 
 ### Basic Usage
+
 ```
 $ gocloc .
 ```
@@ -94,6 +95,38 @@ Go                               1             29              1            323
 TOTAL                            4             37              1            341
 -------------------------------------------------------------------------------
 ```
+
+### Common Examples
+
+These commands use automatic worker selection; `-w` is optional.
+Run `gocloc -h` to see the examples and all available options.
+
+```sh
+# Count the current directory
+gocloc .
+
+# Count multiple directories
+gocloc src tests
+
+# Exclude dependency and build directories by name
+gocloc --not-match-d='(^|[/\\])(dist|node_modules|target)([/\\]|$)' .
+
+# Count only Go and Python files
+gocloc -l Go,Python .
+
+# Report each file, sorted by code lines
+gocloc -f -s code .
+
+# Export JSON outside the scanned directory
+gocloc -o json . > ../counts.json
+
+# Count identical contents only once
+gocloc --dedup .
+```
+
+`--not-match-d` takes a regular expression, not a glob, and matches directory paths.
+The pattern above matches complete directory names at any depth. Keep generated reports outside the scanned
+directory so they are not counted as input files. Shell redirection (`>`) overwrites the destination.
 
 ### Duplicate Files
 

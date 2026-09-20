@@ -3,7 +3,7 @@
 Pushing a version tag (`v*.*.*`) starts the release workflow. It does not publish immediately:
 
 1. The reusable **Go** workflow builds and runs unit/integration tests with the race detector on Linux,
-   macOS and Windows, using both Go 1.23 and stable. It also checks formatting/imports once.
+   macOS and Windows, using the latest stable Go release. It also checks formatting/imports once on Linux.
 2. The reusable **Installers** workflow tests Unix installers on Linux/macOS and Windows installers
    under both Windows PowerShell 5.1 and PowerShell 7, using offline release fixtures.
 3. Only after both workflows pass, GoReleaser builds all seven supported targets and creates the archives
