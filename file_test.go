@@ -82,6 +82,7 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := NewClocOptions()
+			opts.SkipDuplicated = false
 			langs := NewDefinedLanguages()
 			reader := newLineReader(nil)
 			ext, recognized := getFileType(path, opts)

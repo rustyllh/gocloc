@@ -95,6 +95,23 @@ TOTAL                            4             37              1            341
 -------------------------------------------------------------------------------
 ```
 
+### Duplicate Files
+
+By default, every matching file is counted, even when multiple files have identical contents.
+Use `--dedup` to count identical contents only once, keeping the first discovered copy:
+
+```sh
+gocloc .          # Count every matching file
+gocloc --dedup .  # Count identical contents only once
+```
+
+Previous releases enabled deduplication by default. Add `--dedup` to existing scripts if you need
+the previous counting behavior. The legacy `--skip-duplicated` flag still disables deduplication;
+`--skip-duplicated=false` enables it. Do not combine the legacy flag with `--dedup`.
+
+For library users, `NewClocOptions()` now sets `SkipDuplicated=true`. Set it to `false` to enable
+deduplication. The field's meaning is unchanged, so a raw `ClocOptions{}` still enables deduplication.
+
 ### Short Options
 
 Long options remain supported. Short and long options can be mixed in the same command.
@@ -152,6 +169,9 @@ $ gocloc --show-lang
 * target repository is [golang/go](https://github.com/golang/go), branch `master`, commit [be1160f](https://github.com/golang/go/commit/be1160f2a446665d6c0ccd2344c0cbe365bbc3a4)
 
 All tools scanned the Go repository revision above with `dist`, `node_modules`, and `target` excluded. The command output is from a representative warm-cache run. The `time` lines are warm-cache averages: 10 runs for tokei and both gocloc versions, and 3 runs for cloc. gocloc uses 8 workers.
+
+The gocloc results below were recorded with deduplication enabled, before the default changed.
+On current optimized builds, add `--dedup` to use the same counting mode. These historical timings have not been rerun.
 
 ### cloc
 

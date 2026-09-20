@@ -2,9 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -142,6 +146,17 @@ func TestRootCommandErrors(t *testing.T) {
 		want string
 	}{
 		{name: "unknown flag", args: []string{"--unknown"}, want: "unknown flag"},
+		{
+			name: "conflicting dedup options",
+			args: []string{"--dedup", "--skip-duplicated", "."},
+			want: "none of the others can be",
+		},
+		{
+			name: "conflicting explicit false options",
+			args: []string{"--skip-duplicated=false", "--dedup=false", "."},
+			want: "none of the others can be",
+		},
+		{name: "invalid dedup boolean", args: []string{"--dedup=invalid", "."}, want: "invalid argument"},
 		{name: "missing value", args: []string{"--workers"}, want: "needs an argument"},
 		{name: "invalid integer", args: []string{"--workers=many"}, want: "invalid argument"},
 		{name: "hexadecimal integer", args: []string{"--workers=0x8"}, want: "invalid argument"},
@@ -173,6 +188,64 @@ func TestRootCommandErrors(t *testing.T) {
 			}
 			if output.Len() != 0 {
 				t.Fatalf("error must be returned without printing: %q", output.String())
+			}
+		})
+	}
+}
+
+func TestRootCommandDeduplication(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("package sample\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, count := range []int{1, 8} {
+		t.Run("workers="+strconv.Itoa(count), func(t *testing.T) {
+			for _, tc := range []struct {
+				name  string
+				args  []string
+				files int32
+			}{
+				{name: "default counts copies", args: []string{}, files: 2},
+				{name: "dedup", args: []string{"--dedup"}, files: 1},
+				{name: "dedup true", args: []string{"--dedup=true"}, files: 1},
+				{name: "dedup false", args: []string{"--dedup=false"}, files: 2},
+				{name: "legacy skip", args: []string{"--skip-duplicated"}, files: 2},
+				{name: "legacy true", args: []string{"--skip-duplicated=true"}, files: 2},
+				{name: "legacy false", args: []string{"--skip-duplicated=false"}, files: 1},
+				{
+					name:  "last dedup value wins",
+					args:  []string{"--dedup", "--dedup=false"},
+					files: 2,
+				},
+				{
+					name:  "last legacy value wins",
+					args:  []string{"--skip-duplicated", "--skip-duplicated=false"},
+					files: 1,
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					command := newRootCommand()
+					var stdout, stderr bytes.Buffer
+					command.SetOut(&stdout)
+					command.SetErr(&stderr)
+					args := []string{"--output-type=json", "--workers=" + strconv.Itoa(count), dir}
+					command.SetArgs(append(args, tc.args...))
+					if err := command.Execute(); err != nil {
+						t.Fatal(err)
+					}
+					if stderr.Len() != 0 {
+						t.Fatalf("unexpected diagnostics: %s", stderr.String())
+					}
+					var result gocloc.JSONLanguagesResult
+					if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+						t.Fatal(err)
+					}
+					if result.Total.FilesCount != tc.files || result.Total.Code != tc.files {
+						t.Fatalf("total = %+v, want %d files and code lines", result.Total, tc.files)
+					}
+				})
 			}
 		})
 	}

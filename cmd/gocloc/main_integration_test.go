@@ -40,15 +40,18 @@ func TestCLIIntegration(t *testing.T) {
 			files int32
 			code  int32
 		}{
-			{name: "default", args: []string{"."}, files: 3, code: 7},
-			{name: "no deduplication", args: []string{"--skip-duplicated", "."}, files: 4, code: 9},
-			{name: "one worker", args: []string{"--workers=1", "."}, files: 3, code: 7},
-			{name: "multiple paths", args: []string{"src", "scripts"}, files: 2, code: 6},
-			{name: "interspersed", args: []string{"src", "--workers", "2", "scripts"}, files: 2, code: 6},
-			{name: "exclude directory", args: []string{"--not-match-d=target", "."}, files: 2, code: 6},
+			{name: "default", args: []string{"."}, files: 4, code: 9},
+			{name: "deduplication", args: []string{"--dedup", "."}, files: 3, code: 7},
+			{name: "explicit no deduplication", args: []string{"--dedup=false", "."}, files: 4, code: 9},
+			{name: "legacy no deduplication", args: []string{"--skip-duplicated", "."}, files: 4, code: 9},
+			{name: "legacy deduplication", args: []string{"--skip-duplicated=false", "."}, files: 3, code: 7},
+			{name: "one worker", args: []string{"--workers=1", "."}, files: 4, code: 9},
+			{name: "multiple paths", args: []string{"src", "scripts"}, files: 3, code: 8},
+			{name: "interspersed", args: []string{"src", "--workers", "2", "scripts"}, files: 3, code: 8},
+			{name: "exclude directory", args: []string{"--not-match-d=target", "."}, files: 3, code: 8},
 			{name: "include directory", args: []string{"--match-d=scripts", "."}, files: 1, code: 4},
 			{name: "include filename", args: []string{`--match=\.py$`, "."}, files: 1, code: 4},
-			{name: "exclude filename", args: []string{`--not-match=\.py$`, "."}, files: 2, code: 3},
+			{name: "exclude filename", args: []string{`--not-match=\.py$`, "."}, files: 3, code: 5},
 			{name: "fullpath", args: []string{"--fullpath", `--match=^scripts[/\\]`, "."}, files: 1, code: 4},
 			{name: "exclude extension", args: []string{"--exclude-ext=go,txt", "."}, files: 1, code: 4},
 			{name: "include languages", args: []string{"--include-lang=Python,JSON", "."}, files: 1, code: 4},
@@ -122,6 +125,7 @@ func TestCLIIntegration(t *testing.T) {
 			{"--unknown"}, {"--workers"}, {"--workers=0"}, {"--workers=-1", "--version"},
 			{"--sort=unknown", "."}, {"--by-file", "--sort=files", "."}, {"--match=[", "."},
 			{"-w0", "-V"}, {"-w65", "-L"}, {"-sunknown", "."}, {"-f", "-sfiles", "."},
+			{"--dedup", "--skip-duplicated", "."}, {"--dedup=invalid", "."},
 		} {
 			t.Run(strings.Join(args, " "), func(t *testing.T) {
 				stdout, stderr, err := runCLI(binary, dir, args)
@@ -176,6 +180,7 @@ func TestCLIIntegration(t *testing.T) {
 			{name: "debug", args: []string{"--debug", "src/copy.go"}},
 			{name: "filters", args: []string{"--not-match-d=target", "--include-lang=Go,Python", "."}},
 			{name: "no deduplication", args: []string{"--skip-duplicated", "--sort=name", "."}},
+			{name: "deduplication", args: []string{"--skip-duplicated=false", "--sort=name", "."}},
 			{name: "serial", args: []string{"--workers=1", "."}},
 			{name: "parallel", args: []string{"--workers=8", "."}},
 			{name: "decimal leading zero", args: []string{"--workers=08", "."}},
@@ -222,7 +227,10 @@ func TestCLIIntegration(t *testing.T) {
 				if baseline == "" {
 					return
 				}
-				before, oldStderr, oldErr := runCLI(baseline, dir, tc.args)
+				// Older CLIs enabled deduplication by default. Align the counting
+				// mode while allowing an explicit legacy flag below to override it.
+				baselineArgs := append([]string{"--skip-duplicated=true"}, tc.args...)
+				before, oldStderr, oldErr := runCLI(baseline, dir, baselineArgs)
 				if oldErr != nil || newErr != nil {
 					t.Fatalf("before: %v %s; after: %v %s", oldErr, oldStderr, newErr, newStderr)
 				}

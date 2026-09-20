@@ -71,6 +71,7 @@ func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
 
 	opts := NewClocOptions()
 	opts.Workers = 4
+	opts.SkipDuplicated = false
 	files, clocFiles, err := scanAndAnalyzeFiles([]string{dir}, NewDefinedLanguages(), opts)
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +119,7 @@ func TestGetAllFilesParallelMD5ContinuesAfterWalkError(t *testing.T) {
 
 	opts := NewClocOptions()
 	opts.Workers = 4
+	opts.SkipDuplicated = false
 	files, err := getAllFiles([]string{filepath.Join(dir, "missing"), dir}, NewDefinedLanguages(), opts)
 	if err != nil {
 		t.Fatalf("getAllFiles() error = %v, want nil", err)

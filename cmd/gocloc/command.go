@@ -27,6 +27,7 @@ type CmdOptions struct {
 	Fullpath       bool
 	Debug          bool
 	Workers        *int
+	Dedup          bool
 	SkipDuplicated bool
 	ShowLang       bool
 	ShowVersion    bool
@@ -68,6 +69,9 @@ func newRootCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, paths []string) error {
 			if cmd.Flags().Changed("workers") {
 				opts.Workers = &workerCount
+			}
+			if cmd.Flags().Changed("skip-duplicated") {
+				opts.Dedup = !opts.SkipDuplicated
 			}
 			clocOpts := gocloc.NewClocOptions()
 			if err := configureWorkerOptions(opts, clocOpts); err != nil {
@@ -171,11 +175,18 @@ func newRootCommand() *cobra.Command {
 		"number of file analysis workers (1-64; default: automatic)",
 	)
 	flags.BoolVar(
+		&opts.Dedup,
+		"dedup",
+		false,
+		"count files with identical contents only once",
+	)
+	flags.BoolVar(
 		&opts.SkipDuplicated,
 		"skip-duplicated",
 		false,
-		"skip duplicate-file detection",
+		"compatibility option: skip duplicate detection; =false enables it (prefer --dedup)",
 	)
+	command.MarkFlagsMutuallyExclusive("dedup", "skip-duplicated")
 	flags.BoolVarP(
 		&opts.ShowLang,
 		"show-lang",
@@ -271,7 +282,7 @@ func runAnalysis(paths []string, opts CmdOptions, clocOpts *gocloc.ClocOptions, 
 	}
 
 	clocOpts.Debug = opts.Debug
-	clocOpts.SkipDuplicated = opts.SkipDuplicated
+	clocOpts.SkipDuplicated = !opts.Dedup
 	clocOpts.Fullpath = opts.Fullpath
 
 	processor := gocloc.NewProcessor(languages, clocOpts)

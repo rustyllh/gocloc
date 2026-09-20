@@ -15,8 +15,8 @@ this is a regression suite for the scanning/counting pipeline, not a language-co
 | `long_lines` | 8 | 8 | Four lines exceeding 128 KiB per file |
 
 Each fixture runs with workers **1, 2, 4, 8** and both `dedup=true` and `dedup=false` (40 cases).
-`dedup=false` means `SkipDuplicated=true`, corresponding to the CLI's `--skip-duplicated` flag:
-it disables duplicate detection and counts every file.
+`dedup=false` means `SkipDuplicated=true`, matching the CLI's default: duplicate detection is disabled
+and every file is counted. `dedup=true` corresponds to the CLI's `--dedup` flag.
 
 The timed region includes language/option/processor initialization, directory traversal, language detection,
 file reading, optional deduplication, and line counting. Fixture generation, correctness assertions, CLI startup,
@@ -116,7 +116,9 @@ The existing `BenchmarkProcessorAnalyze` remains available and skips unless give
 go test . -run '^$' -bench '^BenchmarkProcessorAnalyze$' -benchmem -benchtime=10x -count=6 -gocloc.bench-path=/path/to/checkout -gocloc.bench-workers=8
 ```
 
-Add `-gocloc.bench-skip-duplicated=true` to disable deduplication. Record the target repository's commit,
+This benchmark keeps deduplication enabled by default for continuity with earlier measurements,
+unlike the current CLI default. Add `-gocloc.bench-skip-duplicated=true` to disable deduplication
+and match the CLI default. Record the target repository's commit,
 branch, dirty/untracked state and tool settings separately; the real-directory benchmark does not apply
 the exclusion flags shown in the README's CLI comparison. Those published CLI results and the synthetic
 fixture benchmarks measure different workloads and should not be compared directly.

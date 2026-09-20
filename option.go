@@ -10,7 +10,9 @@ const MaxWorkers = 64
 
 // ClocOptions is gocloc processor options.
 type ClocOptions struct {
-	Debug          bool
+	Debug bool
+	// SkipDuplicated disables content-based duplicate detection when true.
+	// NewClocOptions sets this to true; false enables deduplication.
 	SkipDuplicated bool
 	ExcludeExts    map[string]struct{}
 	IncludeLangs   map[string]struct{}
@@ -35,11 +37,11 @@ type ClocOptions struct {
 	OnComment func(line string)
 }
 
-// NewClocOptions create new ClocOptions with default values.
+// NewClocOptions creates options that count identical files separately by default.
 func NewClocOptions() *ClocOptions {
 	return &ClocOptions{
 		Debug:          false,
-		SkipDuplicated: false,
+		SkipDuplicated: true,
 		ExcludeExts:    make(map[string]struct{}),
 		IncludeLangs:   make(map[string]struct{}),
 	}
