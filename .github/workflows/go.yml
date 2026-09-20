@@ -52,7 +52,12 @@ jobs:
             exit 1
           fi
 
-      - name: Build
+      - name: Build with Makefile
+        if: matrix.os != 'windows-latest'
+        run: make build
+
+      - name: Build on Windows
+        if: matrix.os == 'windows-latest'
         run: go build -o ./bin/ ./cmd/gocloc
 
       - name: Test

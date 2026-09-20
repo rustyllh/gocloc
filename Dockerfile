@@ -11,7 +11,7 @@ COPY . .
 
 RUN GO111MODULE=on CGO_ENABLED=0 go build \
       -ldflags='-w -s -extldflags "-static"' \
-      -o ./bin/gocloc cmd/gocloc/main.go \
+      -o ./bin/gocloc ./cmd/gocloc \
  && upx-ucl --best --ultra-brute ./bin/gocloc
 
 FROM scratch
