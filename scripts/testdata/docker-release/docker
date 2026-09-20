@@ -18,6 +18,22 @@ case "$1 $2" in
         [[ -f "$context_dir/LICENSE" ]]
         [[ $(cat "$context_dir/$arch/gocloc") == "fixture-$arch" ]]
         ;;
+    'image save')
+        [[ "$3" == --output ]]
+        printf 'fixture-%s\n' "${5##*:}" > "$4"
+        ;;
+    'buildx imagetools')
+        case "$3" in
+            create)
+                [[ "$GOCLOC_DOCKER_TEST_FAILURE" != manifest ]]
+                ;;
+            inspect)
+                printf '{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}},'
+                printf '{"platform":{"os":"linux","architecture":"arm64"}}]}\n'
+                ;;
+            *) exit 1 ;;
+        esac
+        ;;
     'image inspect')
         image=${!#}
         if [[ "$GOCLOC_DOCKER_TEST_FAILURE" == platform ]]; then

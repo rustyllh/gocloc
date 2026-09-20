@@ -87,7 +87,8 @@ docker run --rm --read-only --mount "type=bind,source=$(pwd),target=/workdir,rea
 ```
 
 Use `rustyllh/gocloc:vX.Y.Z` to pin a release. `latest` follows the last published stable release;
-prerelease tags do not update it. These images require Linux containers, including when using Docker Desktop.
+prerelease tags do not update it. Both tags include both architectures; no architecture-suffixed tags are needed.
+These images require Linux containers, including when using Docker Desktop.
 The usual CLI options work after the image name, for example `--dedup -o json .`.
 Images become available after the first Docker-enabled release; older tags do not gain images automatically.
 

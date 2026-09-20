@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Offline digest upload fixture; rejects any attempt to publish a named tag.
+set -euo pipefail
+printf 'crane %s\n' "$*" >> "$GOCLOC_DOCKER_TEST_LOG"
+case "$1" in
+    digest)
+        [[ "$2" == --tarball ]]
+        [[ -f "$3" ]]
+        if [[ "$GOCLOC_DOCKER_TEST_FAILURE" == digest ]]; then
+            printf 'invalid-digest\n'
+        elif [[ "$3" == */amd64.tar ]]; then
+            printf 'sha256:%064d\n' 1
+        else
+            printf 'sha256:%064d\n' 2
+        fi
+        ;;
+    push)
+        [[ -f "$2" ]]
+        [[ "$3" =~ ^rustyllh/gocloc@sha256:[0-9a-f]{64}$ ]]
+        [[ "$GOCLOC_DOCKER_TEST_FAILURE" != push ]]
+        ;;
+    *) exit 1 ;;
+esac

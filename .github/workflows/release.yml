@@ -119,25 +119,24 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Go for the registry uploader
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - name: Install pinned registry uploader
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          GOBIN="$RUNNER_TEMP/gocloc-tools" go install github.com/google/go-containerregistry/cmd/crane@v0.22.1
+          printf '%s\n' "$RUNNER_TEMP/gocloc-tools" >> "$GITHUB_PATH"
       - name: Publish tested images and the multi-platform manifest
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         env:
           IMAGE: rustyllh/gocloc
           RELEASE_TAG: ${{ github.ref_name }}
         shell: bash
-        run: |
-          for arch in amd64 arm64; do
-            docker tag "gocloc-release-candidate:$arch" "$IMAGE:$RELEASE_TAG-$arch"
-            docker push "$IMAGE:$RELEASE_TAG-$arch"
-          done
-          tags=(--tag "$IMAGE:$RELEASE_TAG")
-          if [[ "$RELEASE_TAG" != *-* ]]; then
-            tags+=(--tag "$IMAGE:latest")
-          fi
-          docker buildx imagetools create "${tags[@]}" \
-            "$IMAGE:$RELEASE_TAG-amd64" "$IMAGE:$RELEASE_TAG-arm64"
-          docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --raw |
-            jq -e '([.manifests[].platform | .os + "/" + .architecture] | sort) == ["linux/amd64", "linux/arm64"]'
+        run: bash scripts/publish-docker-release.sh "$IMAGE" "$RELEASE_TAG"
 
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
