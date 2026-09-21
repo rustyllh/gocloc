@@ -15,16 +15,21 @@ type Result struct {
 }
 
 func resolveWorkerCount(opts *ClocOptions) int {
-	if opts == nil || opts.Debug || opts.OnCode != nil || opts.OnBlank != nil || opts.OnComment != nil {
+	if opts == nil || opts.Workers <= 1 {
 		return 1
 	}
-	if opts.Workers > 1 {
-		if opts.Workers > MaxWorkers {
-			return MaxWorkers
-		}
-		return opts.Workers
+	if opts.Workers > MaxWorkers {
+		return MaxWorkers
 	}
-	return 1
+	return opts.Workers
+}
+
+func requiresSynchronousObservers(opts *ClocOptions) bool {
+	if opts == nil {
+		return false
+	}
+	hasCallbacks := opts.OnCode != nil || opts.OnBlank != nil || opts.OnComment != nil
+	return opts.Debug || hasCallbacks
 }
 
 // NewProcessor returns Processor.
@@ -44,13 +49,10 @@ func (p *Processor) Analyze(paths []string) (*Result, error) {
 		clocFiles map[string]*ClocFile
 		err       error
 	)
-	if resolveWorkerCount(opts) > 1 {
-		languages, clocFiles, err = scanAndAnalyzeFiles(paths, p.langs, opts)
+	if requiresSynchronousObservers(opts) {
+		languages, clocFiles, err = analyzeWithObservers(paths, p.langs, opts)
 	} else {
-		languages, err = getAllFiles(paths, p.langs, opts)
-		if err == nil {
-			clocFiles = analyzeFiles(languages, opts)
-		}
+		languages, clocFiles, err = scanAndAnalyzeFiles(paths, p.langs, opts)
 	}
 	if err != nil {
 		return nil, err

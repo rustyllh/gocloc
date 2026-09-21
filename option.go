@@ -21,7 +21,10 @@ type ClocOptions struct {
 	ReNotMatchDir  *regexp.Regexp
 	ReMatchDir     *regexp.Regexp
 	Fullpath       bool
-	Workers        int
+
+	// Workers limits concurrent file analysis. Debug and callbacks always use
+	// synchronous analysis regardless of this setting.
+	Workers int
 
 	// Diagnostics receives warnings and debug logs, never statistical output.
 	// Nil uses os.Stderr; io.Discard silences diagnostics. Processor.Analyze

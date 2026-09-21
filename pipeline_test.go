@@ -22,7 +22,7 @@ func TestProcessorReportsFileFailuresAndContinues(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, workers := range []int{1, 8} {
+	for _, workers := range []int{1, 2, 8} {
 		for _, skip := range []bool{false, true} {
 			t.Run(fmt.Sprintf("workers=%d/skip=%t", workers, skip), func(t *testing.T) {
 				var diagnostics bytes.Buffer

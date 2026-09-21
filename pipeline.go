@@ -42,7 +42,13 @@ func addFileToResult(result map[string]*Language, languages *DefinedLanguages, l
 	result[languageKey].Files = append(result[languageKey].Files, path)
 }
 
-func scanAndAnalyzeFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, map[string]*ClocFile, error) {
+// Ordinary analysis uses this pipeline even with one worker. Observers use
+// analyzeWithObservers because deduplication here happens after line analysis.
+func scanAndAnalyzeFiles(
+	paths []string,
+	languages *DefinedLanguages,
+	opts *ClocOptions,
+) (map[string]*Language, map[string]*ClocFile, error) {
 	workers := resolveWorkerCount(opts)
 	result := make(map[string]*Language)
 	clocFiles := make(map[string]*ClocFile)
@@ -127,6 +133,20 @@ func scanAndAnalyzeFiles(paths []string, languages *DefinedLanguages, opts *Cloc
 	return result, clocFiles, <-walkErrors
 }
 
+// Discovery and observer calls stay on the caller's goroutine. When deduplication
+// is enabled, duplicates are removed before any line-level callbacks or logs.
+func analyzeWithObservers(
+	paths []string,
+	languages *DefinedLanguages,
+	opts *ClocOptions,
+) (map[string]*Language, map[string]*ClocFile, error) {
+	result, err := getAllFiles(paths, languages, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result, analyzeFiles(result, opts), nil
+}
+
 // getAllFiles discovers and deduplicates before analysis so excluded copies
 // never trigger callbacks. Debug and callbacks intentionally keep this ordering.
 func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, error) {
@@ -182,8 +202,7 @@ func addFileCounts(language *Language, file *ClocFile) {
 	language.Blanks += file.Blanks
 }
 
-// The parallel path uses scanAndAnalyzeFiles. This path remains synchronous to
-// preserve callback order and avoid analyzing duplicates before invoking them.
+// Only the observer compatibility path uses this synchronous analysis pass.
 func analyzeFiles(languages map[string]*Language, opts *ClocOptions) map[string]*ClocFile {
 	fileCount := 0
 	for _, language := range languages {

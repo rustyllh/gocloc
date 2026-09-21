@@ -1,44 +1,94 @@
 package gocloc
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestResolveWorkerCount(t *testing.T) {
-	t.Run("zero-value options remain serial", func(t *testing.T) {
-		if got := resolveWorkerCount(&ClocOptions{}); got != 1 {
-			t.Fatalf("resolveWorkerCount() = %d, want 1", got)
-		}
-	})
+	tests := []struct {
+		name string
+		opts *ClocOptions
+		want int
+	}{
+		{name: "nil options", want: 1},
+		{name: "zero value", opts: &ClocOptions{}, want: 1},
+		{name: "negative count", opts: &ClocOptions{Workers: -1}, want: 1},
+		{name: "one worker", opts: &ClocOptions{Workers: 1}, want: 1},
+		{name: "configured count", opts: &ClocOptions{Workers: 3}, want: 3},
+		{name: "maximum count", opts: &ClocOptions{Workers: MaxWorkers}, want: MaxWorkers},
+		{name: "capped count", opts: &ClocOptions{Workers: MaxWorkers + 1}, want: MaxWorkers},
+		{name: "debug does not change count", opts: &ClocOptions{Workers: 2, Debug: true}, want: 2},
+		{
+			name: "code callback does not change count",
+			opts: &ClocOptions{Workers: 2, OnCode: func(string) {}}, want: 2,
+		},
+		{
+			name: "blank callback does not change count",
+			opts: &ClocOptions{Workers: 2, OnBlank: func(string) {}}, want: 2,
+		},
+		{
+			name: "comment callback does not change count",
+			opts: &ClocOptions{Workers: 2, OnComment: func(string) {}}, want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := resolveWorkerCount(tt.opts); got != tt.want {
+				t.Fatalf("resolveWorkerCount() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
 
-	t.Run("configured worker count is used", func(t *testing.T) {
-		if got := resolveWorkerCount(&ClocOptions{Workers: 3}); got != 3 {
-			t.Fatalf("resolveWorkerCount() = %d, want 3", got)
-		}
-	})
+func TestRequiresSynchronousObservers(t *testing.T) {
+	tests := []struct {
+		name string
+		opts *ClocOptions
+		want bool
+	}{
+		{name: "nil options"},
+		{name: "zero value", opts: &ClocOptions{}},
+		{name: "one worker", opts: &ClocOptions{Workers: 1}},
+		{name: "multiple workers", opts: &ClocOptions{Workers: 8}},
+		{name: "warnings only", opts: &ClocOptions{Diagnostics: &bytes.Buffer{}}},
+		{name: "debug", opts: &ClocOptions{Debug: true}, want: true},
+		{name: "code callback", opts: &ClocOptions{OnCode: func(string) {}}, want: true},
+		{name: "blank callback", opts: &ClocOptions{OnBlank: func(string) {}}, want: true},
+		{name: "comment callback", opts: &ClocOptions{OnComment: func(string) {}}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := requiresSynchronousObservers(tt.opts); got != tt.want {
+				t.Fatalf("requiresSynchronousObservers() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
 
-	t.Run("configured worker count is capped", func(t *testing.T) {
-		if got := resolveWorkerCount(&ClocOptions{Workers: MaxWorkers + 1}); got != MaxWorkers {
-			t.Fatalf("resolveWorkerCount() = %d, want %d", got, MaxWorkers)
-		}
-	})
-
-	t.Run("callbacks require serial analysis", func(t *testing.T) {
-		if got := resolveWorkerCount(&ClocOptions{Workers: 2, OnCode: func(string) {}}); got != 1 {
-			t.Fatalf("resolveWorkerCount() = %d, want 1", got)
-		}
-	})
-
-	t.Run("debug output requires serial analysis", func(t *testing.T) {
-		if got := resolveWorkerCount(&ClocOptions{Workers: 2, Debug: true}); got != 1 {
-			t.Fatalf("resolveWorkerCount() = %d, want 1", got)
-		}
-	})
+func TestProcessorAnalyzeEmptyInput(t *testing.T) {
+	for _, workers := range []int{0, 1, 2, 8} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			t.Parallel()
+			opts := &ClocOptions{Workers: workers}
+			result, err := NewProcessor(NewDefinedLanguages(), opts).Analyze(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hasFiles := len(result.Files) != 0 || len(result.Languages) != 0
+			if result.Total.Total != 0 || hasFiles {
+				t.Fatalf("expected empty result: %+v", result)
+			}
+		})
+	}
 }
 
 func TestProcessorAnalyzeWorkersProducesEquivalentResults(t *testing.T) {
@@ -52,15 +102,11 @@ func TestProcessorAnalyzeWorkersProducesEquivalentResults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	serial := analyzeDirectory(t, dir, &ClocOptions{Workers: 1})
-	parallel := analyzeDirectory(t, dir, &ClocOptions{Workers: 2})
-	serialLanguages, serialFiles := serial.Languages, serial.Files
-	parallelLanguages, parallelFiles := parallel.Languages, parallel.Files
-
-	assertAnalysisCounts(t, serialLanguages, serialFiles)
-	assertAnalysisCounts(t, parallelLanguages, parallelFiles)
-	if serialFiles[goFile].Code != parallelFiles[goFile].Code || serialFiles[pythonFile].Comments != parallelFiles[pythonFile].Comments {
-		t.Fatal("serial and parallel analysis produced different file counts")
+	for _, workers := range []int{0, 1, 2, 8} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			result := analyzeDirectory(t, dir, &ClocOptions{Workers: workers})
+			assertAnalysisCounts(t, result.Languages, result.Files)
+		})
 	}
 }
 
@@ -71,25 +117,101 @@ func TestProcessorAnalyzeWorkersPreservesDuplicateBehavior(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	t.Run("nil options count both files", func(t *testing.T) {
+		result := analyzeDirectory(t, dir, nil)
+		validTotal := result.Total.Total == 2 && result.Total.Code == 2
+		if !validTotal || len(result.Files) != 2 {
+			t.Fatalf("nil options should count both files: %+v", result.Total)
+		}
+	})
 
-	for _, skipDuplicated := range []bool{false, true} {
-		t.Run("skip duplicated="+map[bool]string{false: "false", true: "true"}[skipDuplicated], func(t *testing.T) {
-			serial := analyzeDirectory(t, dir, &ClocOptions{Workers: 1, SkipDuplicated: skipDuplicated})
-			parallel := analyzeDirectory(t, dir, &ClocOptions{Workers: 2, SkipDuplicated: skipDuplicated})
-			if serial.Total.Total != parallel.Total.Total || serial.Total.Code != parallel.Total.Code {
-				t.Fatalf("serial totals = (%d, %d), parallel totals = (%d, %d)", serial.Total.Total, serial.Total.Code, parallel.Total.Total, parallel.Total.Code)
-			}
-			if !reflect.DeepEqual(serial.Files, parallel.Files) {
-				t.Fatalf("serial files = %v, parallel files = %v", serial.Files, parallel.Files)
-			}
-			wantFiles := 1
-			if skipDuplicated {
-				wantFiles = 2
-			}
-			if len(parallel.Files) != wantFiles {
-				t.Fatalf("file count = %d, want %d", len(parallel.Files), wantFiles)
-			}
-		})
+	for _, skip := range []bool{false, true} {
+		wantPaths := []string{filepath.Join(dir, "a.go")}
+		if skip {
+			wantPaths = append(wantPaths, filepath.Join(dir, "b.go"))
+		}
+		for _, workers := range []int{0, 1, 2, 8} {
+			t.Run(fmt.Sprintf("workers=%d/skip=%t", workers, skip), func(t *testing.T) {
+				result := analyzeDirectory(t, dir, &ClocOptions{Workers: workers, SkipDuplicated: skip})
+				wantCount := int32(len(wantPaths))
+				if result.Total.Total != wantCount || result.Total.Code != wantCount {
+					t.Fatalf("total=%+v, want %d files and code lines", result.Total, wantCount)
+				}
+				if got := result.Languages["Go"].Files; !reflect.DeepEqual(got, wantPaths) {
+					t.Fatalf("retained files=%q, want %q", got, wantPaths)
+				}
+				if len(result.Files) != len(wantPaths) {
+					t.Fatalf("analyzed file count=%d, want %d", len(result.Files), len(wantPaths))
+				}
+				for _, path := range wantPaths {
+					if result.Files[path] == nil || result.Files[path].Code != 1 {
+						t.Fatalf("file %q was not counted correctly: %+v", path, result.Files[path])
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestProcessorIndividualObserversPreserveDeduplication(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "a.go")
+	duplicate := filepath.Join(dir, "b.go")
+	for _, path := range []string{first, duplicate} {
+		if err := os.WriteFile(path, []byte("package sample\n// comment\n\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := []struct {
+		name string
+		want string
+		set  func(*ClocOptions, func(string))
+	}{
+		{
+			name: "code", want: "package sample",
+			set: func(opts *ClocOptions, callback func(string)) { opts.OnCode = callback },
+		},
+		{
+			name: "comment", want: "// comment",
+			set: func(opts *ClocOptions, callback func(string)) { opts.OnComment = callback },
+		},
+		{
+			name: "blank", want: "",
+			set: func(opts *ClocOptions, callback func(string)) { opts.OnBlank = callback },
+		},
+		{
+			name: "debug only",
+			set:  func(opts *ClocOptions, _ func(string)) { opts.Debug = true },
+		},
+	}
+	for _, tt := range tests {
+		for _, workers := range []int{1, 8} {
+			t.Run(fmt.Sprintf("%s/workers=%d", tt.name, workers), func(t *testing.T) {
+				t.Parallel()
+				var diagnostics bytes.Buffer
+				lines := []string{}
+				opts := &ClocOptions{Workers: workers, Diagnostics: &diagnostics}
+				tt.set(opts, func(line string) { lines = append(lines, line) })
+				result := analyzeDirectory(t, dir, opts)
+				if result.Total.Total != 1 || result.Files[duplicate] != nil {
+					t.Fatalf("duplicate was retained: %+v", result.Files)
+				}
+				if !opts.Debug {
+					if !reflect.DeepEqual(lines, []string{tt.want}) {
+						t.Fatalf("callbacks=%q, want [%q]", lines, tt.want)
+					}
+					return
+				}
+				log := diagnostics.String()
+				ignoreAt := strings.Index(log, "[ignore="+duplicate+"] find same md5")
+				analyzeAt := strings.Index(log, "filename="+first+"\n")
+				invalidOrder := ignoreAt < 0 || analyzeAt <= ignoreAt
+				analyzedDuplicate := strings.Contains(log, "filename="+duplicate+"\n")
+				if invalidOrder || analyzedDuplicate {
+					t.Fatalf("debug must exclude duplicates before line analysis: %s", log)
+				}
+			})
+		}
 	}
 }
 
