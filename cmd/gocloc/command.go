@@ -195,7 +195,7 @@ Examples:
 		&opts.Debug,
 		"debug",
 		false,
-		"dump debug log for developer",
+		"log analysis activity to stderr (files may interleave)",
 	)
 	flags.VarP(
 		(*workerCountValue)(&workerCount),

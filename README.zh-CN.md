@@ -206,6 +206,10 @@ gocloc -h
 生成的报告应放在扫描目录之外，或显式排除。`>` 会覆盖目标文件。
 旧版本默认开启去重；如需保留旧版统计行为，请添加 `--dedup`。
 
+`--debug` 将实际分析过程写入 stderr，不会关闭 worker 并发。
+逐行日志包含文件路径和行号，不同文件的日志允许交错。
+开启 `--dedup` 时，重复文件可能先输出分析日志，再通过 `[SKIP]` 日志标记为不计入统计。
+
 ## Jenkins
 
 在 Jenkins 中安装 [SLOCCount 插件](https://plugins.jenkins.io/sloccount/)，并确保执行节点的 `PATH` 中有 `gocloc`。

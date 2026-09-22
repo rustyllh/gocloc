@@ -42,8 +42,9 @@ func addFileToResult(result map[string]*Language, languages *DefinedLanguages, l
 	result[languageKey].Files = append(result[languageKey].Files, path)
 }
 
-// Ordinary analysis uses this pipeline even with one worker. Observers use
-// analyzeWithObservers because deduplication here happens after line analysis.
+// Analysis, including debug mode, uses this pipeline even with one worker.
+// Callbacks use analyzeWithCallbacks because deduplication here happens after
+// line analysis. Debug records describe work done, including excluded copies.
 func scanAndAnalyzeFiles(
 	paths []string,
 	languages *DefinedLanguages,
@@ -118,6 +119,9 @@ func scanAndAnalyzeFiles(
 			}
 			if !current.ignored && !opts.SkipDuplicated {
 				current.ignored = duplicateDigest(current.digest, fileCache)
+				if current.ignored && opts.Debug {
+					opts.diagnosticf("[SKIP] file=%q reason=\"duplicate content\"\n", current.path)
+				}
 			}
 			if !current.ignored {
 				addFileToResult(result, languages, current.languageKey, current.path)
@@ -133,9 +137,9 @@ func scanAndAnalyzeFiles(
 	return result, clocFiles, <-walkErrors
 }
 
-// Discovery and observer calls stay on the caller's goroutine. When deduplication
+// Discovery and callbacks stay on the caller's goroutine. When deduplication
 // is enabled, duplicates are removed before any line-level callbacks or logs.
-func analyzeWithObservers(
+func analyzeWithCallbacks(
 	paths []string,
 	languages *DefinedLanguages,
 	opts *ClocOptions,
@@ -148,7 +152,7 @@ func analyzeWithObservers(
 }
 
 // getAllFiles discovers and deduplicates before analysis so excluded copies
-// never trigger callbacks. Debug and callbacks intentionally keep this ordering.
+// never trigger callbacks, even when debug mode is enabled alongside callbacks.
 func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, error) {
 	result := make(map[string]*Language)
 	fileCache := make(map[string]struct{})
@@ -170,7 +174,7 @@ func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions)
 				}
 				if duplicateDigest(digest, fileCache) {
 					if opts.Debug {
-						opts.diagnosticf("[ignore=%v] find same md5\n", path)
+						opts.diagnosticf("[SKIP] file=%q reason=\"duplicate content\"\n", path)
 					}
 					return nil
 				}
@@ -202,7 +206,7 @@ func addFileCounts(language *Language, file *ClocFile) {
 	language.Blanks += file.Blanks
 }
 
-// Only the observer compatibility path uses this synchronous analysis pass.
+// Only the callback compatibility path uses this synchronous analysis pass.
 func analyzeFiles(languages map[string]*Language, opts *ClocOptions) map[string]*ClocFile {
 	fileCount := 0
 	for _, language := range languages {

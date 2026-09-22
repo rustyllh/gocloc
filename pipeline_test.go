@@ -6,9 +6,77 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestProcessorDebugLogsAnalysisBeforeDuplicateExclusion(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{}
+	for i := range 24 {
+		path := filepath.Join(dir, fmt.Sprintf("file %02d.go", i))
+		if err := os.WriteFile(path, []byte("package sample\n// comment\n\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+	}
+	for _, workers := range []int{1, 2, 8} {
+		for _, skip := range []bool{false, true} {
+			t.Run(fmt.Sprintf("workers=%d/skip=%t", workers, skip), func(t *testing.T) {
+				t.Parallel()
+				var diagnostics bytes.Buffer
+				opts := &ClocOptions{
+					Workers: workers, Debug: true, SkipDuplicated: skip, Diagnostics: &diagnostics,
+				}
+				result := analyzeDirectory(t, dir, opts)
+				wantFiles := paths[:1]
+				if skip {
+					wantFiles = paths
+				}
+				if !reflect.DeepEqual(result.Languages["Go"].Files, wantFiles) {
+					t.Fatalf("retained files=%q, want %q", result.Languages["Go"].Files, wantFiles)
+				}
+				if result.Total.Total != int32(len(wantFiles)) || result.Total.Code != int32(len(wantFiles)) {
+					t.Fatalf("debug changed counts: %+v", result.Total)
+				}
+				type position struct {
+					path  string
+					index int
+				}
+				expected := make(map[string]position)
+				for i, path := range paths {
+					file := "file=" + strconv.Quote(path)
+					records := []string{
+						"[FILE] " + file,
+						"[CODE] " + file + ` line=1 code=1 comment=0 blank=0 in_comment=false text="package sample\n"`,
+						"[COMM] " + file + ` line=2 code=1 comment=1 blank=0 in_comment=false text="// comment\n"`,
+						"[BLNK] " + file + ` line=3 code=1 comment=1 blank=1 in_comment=false text="\n"`,
+					}
+					if !skip && i > 0 {
+						records = append(records, "[SKIP] "+file+` reason="duplicate content"`)
+					}
+					for index, record := range records {
+						expected[record] = position{path: path, index: index}
+					}
+				}
+				// Require complete records and per-file order, not any cross-file order.
+				next := make(map[string]int)
+				for _, record := range strings.Split(strings.TrimSuffix(diagnostics.String(), "\n"), "\n") {
+					pos, ok := expected[record]
+					if !ok || next[pos.path] != pos.index {
+						t.Fatalf("unexpected, interleaved or out-of-order record: %q", record)
+					}
+					next[pos.path]++
+					delete(expected, record)
+				}
+				if len(expected) != 0 {
+					t.Fatalf("missing debug records: %v", expected)
+				}
+			})
+		}
+	}
+}
 
 func TestProcessorReportsFileFailuresAndContinues(t *testing.T) {
 	dir := t.TempDir()
@@ -34,7 +102,7 @@ func TestProcessorReportsFileFailuresAndContinues(t *testing.T) {
 				if got, want := strings.Count(diagnostics.String(), "warning:"), parallelResultWindowSize(8)+1; got != want {
 					t.Fatalf("warnings=%d, want %d", got, want)
 				}
-				if strings.Contains(diagnostics.String(), "same md5") {
+				if strings.Contains(diagnostics.String(), "duplicate content") {
 					t.Fatal("read failures were reported as duplicates")
 				}
 			})

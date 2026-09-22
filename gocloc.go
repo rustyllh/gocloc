@@ -24,12 +24,12 @@ func resolveWorkerCount(opts *ClocOptions) int {
 	return opts.Workers
 }
 
-func requiresSynchronousObservers(opts *ClocOptions) bool {
+func requiresSynchronousCallbacks(opts *ClocOptions) bool {
 	if opts == nil {
 		return false
 	}
 	hasCallbacks := opts.OnCode != nil || opts.OnBlank != nil || opts.OnComment != nil
-	return opts.Debug || hasCallbacks
+	return hasCallbacks
 }
 
 // NewProcessor returns Processor.
@@ -49,8 +49,8 @@ func (p *Processor) Analyze(paths []string) (*Result, error) {
 		clocFiles map[string]*ClocFile
 		err       error
 	)
-	if requiresSynchronousObservers(opts) {
-		languages, clocFiles, err = analyzeWithObservers(paths, p.langs, opts)
+	if requiresSynchronousCallbacks(opts) {
+		languages, clocFiles, err = analyzeWithCallbacks(paths, p.langs, opts)
 	} else {
 		languages, clocFiles, err = scanAndAnalyzeFiles(paths, p.langs, opts)
 	}

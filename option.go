@@ -10,6 +10,8 @@ const MaxWorkers = 64
 
 // ClocOptions is gocloc processor options.
 type ClocOptions struct {
+	// Debug logs analysis activity, not just files included in the result.
+	// Records from different files may interleave when using multiple workers.
 	Debug bool
 	// SkipDuplicated disables content-based duplicate detection when true.
 	// NewClocOptions sets this to true; false enables deduplication.
@@ -22,8 +24,8 @@ type ClocOptions struct {
 	ReMatchDir     *regexp.Regexp
 	Fullpath       bool
 
-	// Workers limits concurrent file analysis. Debug and callbacks always use
-	// synchronous analysis regardless of this setting.
+	// Workers limits concurrent file analysis, including debug mode. Callbacks
+	// always use synchronous analysis regardless of this setting.
 	Workers int
 
 	// Diagnostics receives warnings and debug logs, never statistical output.

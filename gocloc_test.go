@@ -48,7 +48,7 @@ func TestResolveWorkerCount(t *testing.T) {
 	}
 }
 
-func TestRequiresSynchronousObservers(t *testing.T) {
+func TestRequiresSynchronousCallbacks(t *testing.T) {
 	tests := []struct {
 		name string
 		opts *ClocOptions
@@ -59,7 +59,11 @@ func TestRequiresSynchronousObservers(t *testing.T) {
 		{name: "one worker", opts: &ClocOptions{Workers: 1}},
 		{name: "multiple workers", opts: &ClocOptions{Workers: 8}},
 		{name: "warnings only", opts: &ClocOptions{Diagnostics: &bytes.Buffer{}}},
-		{name: "debug", opts: &ClocOptions{Debug: true}, want: true},
+		{name: "debug", opts: &ClocOptions{Debug: true}},
+		{
+			name: "debug with callback",
+			opts: &ClocOptions{Debug: true, OnCode: func(string) {}}, want: true,
+		},
 		{name: "code callback", opts: &ClocOptions{OnCode: func(string) {}}, want: true},
 		{name: "blank callback", opts: &ClocOptions{OnBlank: func(string) {}}, want: true},
 		{name: "comment callback", opts: &ClocOptions{OnComment: func(string) {}}, want: true},
@@ -67,8 +71,8 @@ func TestRequiresSynchronousObservers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := requiresSynchronousObservers(tt.opts); got != tt.want {
-				t.Fatalf("requiresSynchronousObservers() = %t, want %t", got, tt.want)
+			if got := requiresSynchronousCallbacks(tt.opts); got != tt.want {
+				t.Fatalf("requiresSynchronousCallbacks() = %t, want %t", got, tt.want)
 			}
 		})
 	}
@@ -153,7 +157,7 @@ func TestProcessorAnalyzeWorkersPreservesDuplicateBehavior(t *testing.T) {
 	}
 }
 
-func TestProcessorIndividualObserversPreserveDeduplication(t *testing.T) {
+func TestProcessorIndividualCallbacksPreserveDeduplication(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "a.go")
 	duplicate := filepath.Join(dir, "b.go")
@@ -180,8 +184,11 @@ func TestProcessorIndividualObserversPreserveDeduplication(t *testing.T) {
 			set: func(opts *ClocOptions, callback func(string)) { opts.OnBlank = callback },
 		},
 		{
-			name: "debug only",
-			set:  func(opts *ClocOptions, _ func(string)) { opts.Debug = true },
+			name: "debug with callback", want: "package sample",
+			set: func(opts *ClocOptions, callback func(string)) {
+				opts.Debug = true
+				opts.OnCode = callback
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -196,19 +203,19 @@ func TestProcessorIndividualObserversPreserveDeduplication(t *testing.T) {
 				if result.Total.Total != 1 || result.Files[duplicate] != nil {
 					t.Fatalf("duplicate was retained: %+v", result.Files)
 				}
+				if !reflect.DeepEqual(lines, []string{tt.want}) {
+					t.Fatalf("callbacks=%q, want [%q]", lines, tt.want)
+				}
 				if !opts.Debug {
-					if !reflect.DeepEqual(lines, []string{tt.want}) {
-						t.Fatalf("callbacks=%q, want [%q]", lines, tt.want)
-					}
 					return
 				}
 				log := diagnostics.String()
-				ignoreAt := strings.Index(log, "[ignore="+duplicate+"] find same md5")
-				analyzeAt := strings.Index(log, "filename="+first+"\n")
+				ignoreAt := strings.Index(log, fmt.Sprintf("[SKIP] file=%q reason=\"duplicate content\"\n", duplicate))
+				analyzeAt := strings.Index(log, fmt.Sprintf("[FILE] file=%q\n", first))
 				invalidOrder := ignoreAt < 0 || analyzeAt <= ignoreAt
-				analyzedDuplicate := strings.Contains(log, "filename="+duplicate+"\n")
+				analyzedDuplicate := strings.Contains(log, fmt.Sprintf("[FILE] file=%q\n", duplicate))
 				if invalidOrder || analyzedDuplicate {
-					t.Fatalf("debug must exclude duplicates before line analysis: %s", log)
+					t.Fatalf("callbacks must exclude duplicates before line analysis: %s", log)
 				}
 			})
 		}

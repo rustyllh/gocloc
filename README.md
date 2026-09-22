@@ -205,6 +205,10 @@ Short and long options can be mixed; see `gocloc -h` for the full list.
 Keep generated reports outside the scanned tree or explicitly exclude them. `>` overwrites the destination.
 Older releases enabled deduplication by default; use `--dedup` to retain that behavior.
 
+`--debug` writes analysis activity to stderr without disabling parallel workers.
+Line records include the file path and line number; records from different files may interleave.
+With `--dedup`, a duplicate can produce analysis logs before a `[SKIP]` record excludes it from the totals.
+
 ## Jenkins
 
 Install the [SLOCCount plugin](https://plugins.jenkins.io/sloccount/) on Jenkins and put `gocloc` on the agent's `PATH`.

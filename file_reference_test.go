@@ -11,9 +11,10 @@ import (
 
 // Frozen string-based parser from 136a87b. Keep this test oracle independent of
 // the byte parser so differential tests catch changes to counting and callbacks.
+// Only diagnostic formatting is shared; exact records are tested separately.
 func referenceAnalyzeReader(filename string, language *Language, file io.Reader, opts *ClocOptions) (*ClocFile, error) {
 	if opts.Debug {
-		opts.diagnosticf("filename=%v\n", filename)
+		opts.diagnosticf("[FILE] file=%q\n", filename)
 	}
 
 	clocFile := &ClocFile{
@@ -155,8 +156,12 @@ func referenceOnBlank(clocFile *ClocFile, opts *ClocOptions, isInComments bool, 
 	}
 
 	if opts.Debug {
-		opts.diagnosticf("[BLNK, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
+		opts.debugLine(
+			"BLNK",
+			clocFile,
+			isInComments,
+			[]byte(lineOrg),
+		)
 	}
 }
 
@@ -167,8 +172,12 @@ func referenceOnComment(clocFile *ClocFile, opts *ClocOptions, isInComments bool
 	}
 
 	if opts.Debug {
-		opts.diagnosticf("[COMM, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
+		opts.debugLine(
+			"COMM",
+			clocFile,
+			isInComments,
+			[]byte(lineOrg),
+		)
 	}
 }
 
@@ -179,7 +188,11 @@ func referenceOnCode(clocFile *ClocFile, opts *ClocOptions, isInComments bool, l
 	}
 
 	if opts.Debug {
-		opts.diagnosticf("[CODE, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, lineOrg)
+		opts.debugLine(
+			"CODE",
+			clocFile,
+			isInComments,
+			[]byte(lineOrg),
+		)
 	}
 }

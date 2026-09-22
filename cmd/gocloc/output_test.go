@@ -69,10 +69,61 @@ func TestCommandDiagnosticsDoNotCorruptJSON(t *testing.T) {
 				if !strings.Contains(stderr.String(), "warning:") || !strings.Contains(stderr.String(), missing) {
 					t.Fatalf("missing warning: %s", stderr.String())
 				}
-				if strings.Contains(stderr.String(), "filename=") != debug {
+				if strings.Contains(stderr.String(), "[FILE] file=") != debug {
 					t.Fatalf("debug=%t stderr=%s", debug, stderr.String())
 				}
 			})
+		}
+	}
+}
+
+func TestCommandDebugPreservesSortedOutput(t *testing.T) {
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"a.go": "package sample\n// comment\n\n",
+		"b.go": "package sample\n// comment\n\n",
+		"c.py": "# comment\nprint(1)\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, format := range []string{"default", "json", "cloc-xml", "markdown", "sloccount"} {
+		for _, byFile := range []bool{false, true} {
+			for _, dedup := range []bool{false, true} {
+				name := fmt.Sprintf("%s/by-file=%t/dedup=%t", format, byFile, dedup)
+				t.Run(name, func(t *testing.T) {
+					t.Parallel()
+					var withoutDebug string
+					for _, debug := range []bool{false, true} {
+						var stdout, stderr bytes.Buffer
+						command := newRootCommand()
+						command.SetOut(&stdout)
+						command.SetErr(&stderr)
+						command.SetArgs([]string{
+							"--workers=8", "--sort=name", "--output-type=" + format,
+							fmt.Sprintf("--by-file=%t", byFile), fmt.Sprintf("--dedup=%t", dedup),
+							fmt.Sprintf("--debug=%t", debug), dir,
+						})
+						if err := command.Execute(); err != nil {
+							t.Fatal(err)
+						}
+						if !debug {
+							withoutDebug = stdout.String()
+							if stderr.Len() != 0 {
+								t.Fatalf("unexpected diagnostics: %s", stderr.String())
+							}
+							continue
+						}
+						if stdout.String() != withoutDebug {
+							t.Fatalf("debug changed sorted output:\n%s\nwant:\n%s", stdout.String(), withoutDebug)
+						}
+						if !strings.Contains(stderr.String(), "[CODE] file=") {
+							t.Fatalf("missing analysis logs: %s", stderr.String())
+						}
+					}
+				})
+			}
 		}
 	}
 }

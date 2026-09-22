@@ -255,13 +255,16 @@ func TestCLIIntegration(t *testing.T) {
 					t.Fatalf("run CLI: %v, stdout: %q, stderr: %q", newErr, after, newStderr)
 				}
 				if tc.name == "debug" {
-					if !strings.Contains(newStderr, "filename=") || strings.Contains(after, "filename=") {
+					hasDebug := strings.Contains(newStderr, "[FILE] file=")
+					if !hasDebug || strings.Contains(after, "[FILE] file=") {
 						t.Fatalf("debug logs must be on stderr: stdout=%q stderr=%q", after, newStderr)
 					}
 				} else if newStderr != "" {
 					t.Fatalf("unexpected diagnostics: %s", newStderr)
 				}
-				if baseline == "" {
+				// Debug record format and cross-file order intentionally differ
+				// from older releases. Statistical parity is tested separately.
+				if baseline == "" || tc.name == "debug" {
 					return
 				}
 				// Older CLIs enabled deduplication by default. Align the counting
@@ -275,12 +278,6 @@ func TestCLIIntegration(t *testing.T) {
 					// Extension order comes from a map and varies even between legacy runs.
 					before = normalizeLanguageExtensions(before)
 					after = normalizeLanguageExtensions(after)
-				}
-				if tc.name == "debug" && oldStderr == "" {
-					// Older baselines wrote debug text to stdout. Newer baselines
-					// already separate diagnostics, so compare both streams directly.
-					after = newStderr + after
-					newStderr = ""
 				}
 				if before != after || oldStderr != newStderr {
 					t.Fatalf("output changed\nbefore:\n%s\n%s\nafter:\n%s\n%s", before, oldStderr, after, newStderr)

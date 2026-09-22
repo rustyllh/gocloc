@@ -422,7 +422,7 @@ func detectFileType(path string, opts *ClocOptions, readContent func(bool) ([]by
 		}
 		lang := enry.GetLanguage(path, content)
 		if opts.Debug {
-			opts.diagnosticf("path=%v, lang=%v\n", path, lang)
+			opts.diagnosticf("[LANG] file=%q language=%q\n", path, lang)
 		}
 		return lang, true
 	case ".mo":
@@ -432,7 +432,7 @@ func detectFileType(path string, opts *ClocOptions, readContent func(bool) ([]by
 		}
 		lang := enry.GetLanguage(path, content)
 		if opts.Debug {
-			opts.diagnosticf("path=%v, lang=%v\n", path, lang)
+			opts.diagnosticf("[LANG] file=%q language=%q\n", path, lang)
 		}
 		if lang != "" {
 			return "Motoko", true

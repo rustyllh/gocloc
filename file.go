@@ -189,7 +189,7 @@ func analyzeReader(filename string, language *Language, file io.Reader, opts *Cl
 
 func analyzeLines(filename string, language *Language, reader *lineReader, opts *ClocOptions) (*ClocFile, error) {
 	if opts.Debug {
-		opts.diagnosticf("filename=%v\n", filename)
+		opts.diagnosticf("[FILE] file=%q\n", filename)
 	}
 
 	clocFile := &ClocFile{
@@ -393,8 +393,12 @@ func onBlank(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, lin
 	}
 
 	if opts.Debug {
-		opts.diagnosticf("[BLNK, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, string(lineOrg))
+		opts.debugLine(
+			"BLNK",
+			clocFile,
+			isInComments,
+			lineOrg,
+		)
 	}
 }
 
@@ -405,8 +409,12 @@ func onComment(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, l
 	}
 
 	if opts.Debug {
-		opts.diagnosticf("[COMM, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, string(lineOrg))
+		opts.debugLine(
+			"COMM",
+			clocFile,
+			isInComments,
+			lineOrg,
+		)
 	}
 }
 
@@ -417,7 +425,11 @@ func onCode(clocFile *ClocFile, opts *ClocOptions, isInComments bool, line, line
 	}
 
 	if opts.Debug {
-		opts.diagnosticf("[CODE, cd:%d, cm:%d, bk:%d, iscm:%v] %s\n",
-			clocFile.Code, clocFile.Comments, clocFile.Blanks, isInComments, string(lineOrg))
+		opts.debugLine(
+			"CODE",
+			clocFile,
+			isInComments,
+			lineOrg,
+		)
 	}
 }

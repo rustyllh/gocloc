@@ -79,6 +79,37 @@ func TestProcessorReportsDiagnosticWriterFailure(t *testing.T) {
 	}
 }
 
+func TestProcessorDebugDrainsWorkersAfterDiagnosticFailure(t *testing.T) {
+	dir := t.TempDir()
+	// A failed debug writer must not strand candidates beyond the result window.
+	for i := range parallelResultWindowSize(8) + 1 {
+		path := filepath.Join(dir, fmt.Sprintf("sample%03d.go", i))
+		if err := os.WriteFile(path, []byte("package sample\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failure := errors.New("debug output is closed")
+	for _, tc := range []struct {
+		name   string
+		writer io.Writer
+		want   error
+	}{
+		{name: "write error", writer: diagnosticFailureWriter{err: failure}, want: failure},
+		{name: "short write", writer: diagnosticFailureWriter{}, want: io.ErrShortWrite},
+	} {
+		for _, workers := range []int{1, 8} {
+			t.Run(fmt.Sprintf("%s/workers=%d", tc.name, workers), func(t *testing.T) {
+				t.Parallel()
+				opts := &ClocOptions{Workers: workers, Debug: true, Diagnostics: tc.writer}
+				_, err := NewProcessor(NewDefinedLanguages(), opts).Analyze([]string{dir})
+				if !errors.Is(err, tc.want) {
+					t.Fatalf("error=%v, want %v", err, tc.want)
+				}
+			})
+		}
+	}
+}
+
 func TestProcessorNormalExclusionsDoNotWarn(t *testing.T) {
 	dir := t.TempDir()
 	for name, content := range map[string]string{

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,49 @@ import (
 type failingSourceReader struct{ err error }
 
 func (r failingSourceReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestAnalyzeReaderDebugRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{name: "empty"},
+		{
+			name:    "line numbers, comment state and escaped content",
+			content: "package main\r\n// note\t\x1b[31m\n\n/* start\nmiddle\n*/\nvar x = 1",
+			want: []string{
+				`[CODE] file=FILE line=1 code=1 comment=0 blank=0 in_comment=false text="package main\r\n"`,
+				`[COMM] file=FILE line=2 code=1 comment=1 blank=0 in_comment=false text="// note\t\x1b[31m\n"`,
+				`[BLNK] file=FILE line=3 code=1 comment=1 blank=1 in_comment=false text="\n"`,
+				`[COMM] file=FILE line=4 code=1 comment=2 blank=1 in_comment=true text="/* start\n"`,
+				`[COMM] file=FILE line=5 code=1 comment=3 blank=1 in_comment=true text="middle\n"`,
+				`[COMM] file=FILE line=6 code=1 comment=4 blank=1 in_comment=false text="*/\n"`,
+				`[CODE] file=FILE line=7 code=2 comment=4 blank=1 in_comment=false text="var x = 1"`,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			filename := "dir/\"file\n.go"
+			var diagnostics bytes.Buffer
+			opts := &ClocOptions{Debug: true, Diagnostics: &diagnostics}
+			AnalyzeReader(
+				filename,
+				NewDefinedLanguages().Langs["Go"],
+				strings.NewReader(tc.content),
+				opts,
+			)
+			want := "[FILE] file=" + strconv.Quote(filename) + "\n"
+			for _, record := range tc.want {
+				want += strings.ReplaceAll(record, "file=FILE", "file="+strconv.Quote(filename)) + "\n"
+			}
+			if got := diagnostics.String(); got != want {
+				t.Fatalf("debug records:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
 
 func TestAnalyzeReaderReportsReadFailure(t *testing.T) {
 	failure := errors.New("injected read failure")
