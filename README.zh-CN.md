@@ -68,10 +68,12 @@ docker run --rm --read-only --mount "type=bind,source=$(pwd),target=/workdir,rea
 所有工具均扫描上述 Go 仓库版本，并排除 `dist`、`node_modules` 和 `target` 目录。
 命令输出取自一次有代表性的热缓存运行；`time` 行为热缓存平均值：tokei 和上游 gocloc 各运行 10 次，优化版 gocloc 运行 30 次（分为 3 组，每组 10 次），cloc 运行 3 次。优化版 gocloc 使用 8 个 worker。
 
-优化版 gocloc 于 2026-09-20 在 macOS 27.0 上重新测试，预热后计时，计时期间将 stdout 重定向到 `/dev/null`。
-测量时与同一 Go 工具链编译的早期优化版 `0660fd9` 交错运行；两者的统计输出完全一致。
-其他结果保留自 macOS 26.6.1 上的历史测试，未重新测量，因此不是严格的同环境对比。
-两个 gocloc 版本的结果均启用了去重；当前优化版通过 `--dedup` 显式开启。
+优化版 gocloc 和 tokei 于 2026-09-23 在 macOS 27.0 上重新测试。每条命令先进行两次不计时预热，随后交错测量，计时期间将 stdout 重定向到 `/dev/null`。
+Go 运行时设置为 `GOMAXPROCS=8`、`GOGC=100`、`GOMEMLIMIT=off`。测试时有后台应用运行，未剔除任何样本。
+优化版 gocloc 开启去重时的耗时中位数为 0.225 s，tokei 为 0.210 s。
+cloc 和上游 gocloc 保留自 macOS 26.6.1 上的历史测试，因此整组结果不是严格的同环境对比。
+下面两个 gocloc 输出块均启用了去重；优化版通过 `--dedup` 显式开启。
+这些 CLI 测量没有注册库回调，不涵盖延迟回调的回放开销。
 
 ### cloc
 
@@ -121,7 +123,7 @@ $ time tokei . -e '{dist,node_modules,target}/' -s lines -C
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Total                 14256      3803655      2787281       711745       304629
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-tokei . -e '{dist,node_modules,target}/' -s lines -C  0.593s user 0.738s system 628.1% cpu 0.212 total
+tokei . -e '{dist,node_modules,target}/' -s lines -C  0.580s user 0.765s system 608.6% cpu 0.222 total
 ```
 
 ### 上游 gocloc（https://github.com/hhatto/gocloc）
@@ -167,8 +169,12 @@ JavaScript                       9            301            332           1705
 -------------------------------------------------------------------------------
 TOTAL                        13995         310202         509643        2924932
 -------------------------------------------------------------------------------
-gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .  0.523s user 0.852s system 619.5% cpu 0.222 total
+gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .  0.517s user 0.822s system 581.1% cpu 0.232 total
 ```
+
+不使用 `--dedup`（默认行为）时，优化版 gocloc 在相同排除条件和 8 个 worker 下统计了 14,225 个文件。
+30 次交错热缓存测量的平均耗时为 **0.210 s**，中位数为 **0.197 s**。
+各工具的统计规则不同，耗时接近不代表完成了完全相同的工作。
 
 ## 使用
 
@@ -209,6 +215,37 @@ gocloc -h
 `--debug` 将实际分析过程写入 stderr，不会关闭 worker 并发。
 逐行日志包含文件路径和行号，不同文件的日志允许交错。
 开启 `--dedup` 时，重复文件可能先输出分析日志，再通过 `[SKIP]` 日志标记为不计入统计。
+
+### 库回调
+
+`Processor.Analyze` 在 worker 中执行 `OnCode`、`OnComment` 和 `OnBlank`。
+使用多个 worker 时，不同文件的回调可能并发执行，调用方需要保护共享状态。
+例如，将以下配置传给 `NewProcessor`（计数器使用 `sync/atomic`）：
+
+```go
+options := gocloc.NewClocOptions()
+options.Workers = 8
+options.SkipDuplicated = false // 可选：内容相同的文件只统计一次。
+var codeLines atomic.Int64
+options.OnCode = func(string) { codeLines.Add(1) }
+```
+
+同一文件内按行顺序调用，文件之间不保证调用顺序。`Workers` 同时限制文件分析和回调执行的并发度。
+设置 `Workers = 1` 可保证单次 `Analyze` 内回调不重叠，但不保证运行在调用方的 goroutine 上。
+回调必须返回，`Analyze` 才能结束；即使发生错误，`Analyze` 也会等待全部回调执行完毕再返回。
+`AnalyzeFile` 和 `AnalyzeReader` 仍然同步调用回调。
+这改变了旧版库在调用方 goroutine 中执行处理器回调的约定，已有调用方需要保护共享状态或显式使用单 worker。
+
+回调遵循去重设置。不去重时，每份文件都会在分析过程中触发回调，后续读取失败不能撤销已经执行的调用。
+开启去重时，worker 单次读取源文件，同时计算哈希、统计行数并记录回调事件；按发现顺序去重后，
+只有首次保留副本的事件会交给回调 worker 执行。源文件读取失败或被去重排除时，不触发回调。
+debug 日志仍然反映实际分析过程，包括被排除的副本。
+
+每次扫描的延迟事件缓存共享 16 MiB 内存缓冲容量预算（不是进程总内存上限）。
+超过额度的缓存写入系统临时目录的私有文件，回放或排除后删除；排队中的临时文件不占用打开的文件描述符。
+解析缓冲、单条回调字符串以及调用方保留的内存不计入该预算。
+临时缓存写入失败时，给出诊断并排除相应文件；回放或清理失败时，等待 worker 完成后返回错误。
+已经执行的回调无法回滚。
 
 ## Jenkins
 

@@ -122,7 +122,7 @@ func TestParallelResultWindowSize(t *testing.T) {
 	}
 }
 
-func TestGetAllFilesParallelMD5PreservesFirstFile(t *testing.T) {
+func TestPipelineDeduplicationPreservesFirstFile(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "a.go")
 	duplicate := filepath.Join(dir, "b.go")
@@ -178,7 +178,7 @@ func TestParallelDetectionPreservesOrderAcrossIgnoredFiles(t *testing.T) {
 	}
 }
 
-func TestGetAllFilesParallelMD5ContinuesAfterWalkError(t *testing.T) {
+func TestPipelineContinuesAfterWalkError(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "valid.go")
 	if err := os.WriteFile(file, []byte("package valid\n"), 0o600); err != nil {
@@ -188,16 +188,16 @@ func TestGetAllFilesParallelMD5ContinuesAfterWalkError(t *testing.T) {
 	opts := NewClocOptions()
 	opts.Workers = 4
 	opts.SkipDuplicated = false
-	files, err := getAllFiles([]string{filepath.Join(dir, "missing"), dir}, NewDefinedLanguages(), opts)
+	files, _, err := scanAndAnalyzeFiles([]string{filepath.Join(dir, "missing"), dir}, NewDefinedLanguages(), opts)
 	if err != nil {
-		t.Fatalf("getAllFiles() error = %v, want nil", err)
+		t.Fatalf("scanAndAnalyzeFiles() error = %v, want nil", err)
 	}
 	if got, want := files["Go"].Files, []string{file}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("retained files = %q, want %q", got, want)
 	}
 }
 
-func TestGetAllFilesSkipDuplicatedKeepsAllFiles(t *testing.T) {
+func TestPipelineSkipDuplicatedKeepsAllFiles(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "a.go")
 	duplicate := filepath.Join(dir, "b.go")
@@ -210,7 +210,7 @@ func TestGetAllFilesSkipDuplicatedKeepsAllFiles(t *testing.T) {
 	opts := NewClocOptions()
 	opts.Workers = 4
 	opts.SkipDuplicated = true
-	files, err := getAllFiles([]string{dir}, NewDefinedLanguages(), opts)
+	files, _, err := scanAndAnalyzeFiles([]string{dir}, NewDefinedLanguages(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}

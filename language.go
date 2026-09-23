@@ -1,12 +1,8 @@
 package gocloc
 
 import (
-	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -374,38 +370,6 @@ func getShebang(line string) (shebangLang string, ok bool) {
 	}
 
 	return "", false
-}
-
-func getFileType(path string, opts *ClocOptions) (ext string, ok bool) {
-	var sourceErr error
-	ext, ok = detectFileType(path, opts, func(all bool) ([]byte, error) {
-		var content []byte
-		var err error
-		if all {
-			content, err = os.ReadFile(path)
-		} else {
-			var file *os.File
-			file, err = os.Open(path)
-			if err == nil {
-				content, err = bufio.NewReader(file).ReadBytes('\n')
-				closeErr := file.Close()
-				if errors.Is(err, io.EOF) && closeErr != nil {
-					err = closeErr
-				} else if closeErr != nil {
-					err = errors.Join(err, closeErr)
-				}
-			}
-		}
-		if err != nil && !errors.Is(err, io.EOF) {
-			sourceErr = fmt.Errorf("read %q for language detection: %w", path, err)
-		}
-		return content, err
-	})
-	if sourceErr != nil {
-		opts.warn(sourceErr)
-		return "", false
-	}
-	return ext, ok
 }
 
 // detectFileType preserves filename and shebang precedence while allowing callers

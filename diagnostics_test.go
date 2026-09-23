@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -104,6 +105,46 @@ func TestProcessorDebugDrainsWorkersAfterDiagnosticFailure(t *testing.T) {
 				_, err := NewProcessor(NewDefinedLanguages(), opts).Analyze([]string{dir})
 				if !errors.Is(err, tc.want) {
 					t.Fatalf("error=%v, want %v", err, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestProcessorConcurrentCallbacksFinishAfterDiagnosticFailure(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("package sample\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		writer io.Writer
+		want   error
+	}{
+		{name: "write error", writer: diagnosticFailureWriter{err: io.ErrClosedPipe}, want: io.ErrClosedPipe},
+		{name: "short write", writer: diagnosticFailureWriter{}, want: io.ErrShortWrite},
+	} {
+		for _, skip := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/skip=%t", tc.name, skip), func(t *testing.T) {
+				t.Parallel()
+				var calls atomic.Int32
+				opts := &ClocOptions{
+					Workers: 8, Debug: true,
+					SkipDuplicated: skip, Diagnostics: tc.writer,
+					OnCode: func(string) { calls.Add(1) },
+				}
+				_, err := NewProcessor(NewDefinedLanguages(), opts).Analyze([]string{dir})
+				if !errors.Is(err, tc.want) {
+					t.Fatalf("error=%v, want %v", err, tc.want)
+				}
+				wantCalls := int32(1)
+				if skip {
+					wantCalls = 2
+				}
+				if calls.Load() != wantCalls {
+					t.Fatalf("completed callbacks=%d, want %d", calls.Load(), wantCalls)
 				}
 			})
 		}

@@ -24,8 +24,8 @@ type ClocOptions struct {
 	ReMatchDir     *regexp.Regexp
 	Fullpath       bool
 
-	// Workers limits concurrent file analysis, including debug mode. Callbacks
-	// always use synchronous analysis regardless of this setting.
+	// Workers limits concurrent file analysis and concurrent callback execution.
+	// Values <= 1 use one worker; values above MaxWorkers are capped.
 	Workers int
 
 	// Diagnostics receives warnings and debug logs, never statistical output.
@@ -35,10 +35,21 @@ type ClocOptions struct {
 	diagnostics *diagnosticSink
 
 	// OnCode is triggered for each line of code.
+	// Processor.Analyze invokes callbacks in workers, never guaranteeing the
+	// caller's goroutine. Calls within one file follow line order; different files
+	// may overlap. Callers must synchronize shared state and let callbacks return.
+	// Analyze waits for all callbacks. Workers=1 prevents overlapping calls within
+	// one Analyze invocation. AnalyzeFile and AnalyzeReader call synchronously.
+	//
+	// With deduplication, events are buffered and only retained, successfully read
+	// files trigger callbacks. The event cache has a bounded memory budget and
+	// spills to temporary files, removed after replay or exclusion. Without
+	// deduplication, callbacks stream during analysis; later read errors cannot
+	// undo them. Replay errors likewise cannot undo already delivered events.
 	OnCode func(line string)
-	// OnBlank is triggered for each blank line.
+	// OnBlank is triggered for each blank line, with the same contract as OnCode.
 	OnBlank func(line string)
-	// OnComment is triggered for each line of comments.
+	// OnComment is triggered for each comment line, with the same contract as OnCode.
 	OnComment func(line string)
 }
 

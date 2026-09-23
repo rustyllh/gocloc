@@ -2,6 +2,8 @@ package gocloc
 
 import (
 	"crypto/md5"
+	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -17,6 +19,7 @@ type fileAnalysisResult struct {
 	digest      [md5.Size]byte
 	clocFile    *ClocFile
 	ignored     bool
+	events      *callbackEvents
 }
 
 func parallelResultWindowSize(workers int) int {
@@ -42,9 +45,9 @@ func addFileToResult(result map[string]*Language, languages *DefinedLanguages, l
 	result[languageKey].Files = append(result[languageKey].Files, path)
 }
 
-// Analysis, including debug mode, uses this pipeline even with one worker.
-// Callbacks use analyzeWithCallbacks because deduplication here happens after
-// line analysis. Debug records describe work done, including excluded copies.
+// All analysis uses this pipeline, including callbacks, debug and one worker.
+// With deduplication, callbacks are recorded during analysis and dispatched only
+// for retained files. Debug records still describe work done on excluded copies.
 func scanAndAnalyzeFiles(
 	paths []string,
 	languages *DefinedLanguages,
@@ -62,6 +65,12 @@ func scanAndAnalyzeFiles(
 	candidates := make(chan fileCandidate, windowSize)
 	results := make(chan fileAnalysisResult, windowSize)
 
+	var callbacks *callbackDispatcher
+	hasCallbacks := opts.OnCode != nil || opts.OnBlank != nil || opts.OnComment != nil
+	if hasCallbacks && !opts.SkipDuplicated {
+		callbacks = newCallbackDispatcher(workers, opts, tokens)
+	}
+
 	var workerGroup sync.WaitGroup
 	for range workers {
 		workerGroup.Add(1)
@@ -69,12 +78,28 @@ func scanAndAnalyzeFiles(
 			defer workerGroup.Done()
 			reader := newLineReader(nil)
 			for candidate := range candidates {
-				results <- detectAndAnalyzeFile(
+				analysisOpts := opts
+				var events *callbackEvents
+				if callbacks != nil {
+					events = &callbackEvents{memoryLimit: callbackMemoryBudget / windowSize}
+					analysisOpts = events.capture(opts)
+				}
+				item := detectAndAnalyzeFile(
 					candidate,
 					languages,
-					opts,
+					analysisOpts,
 					reader,
 				)
+				if events != nil {
+					item.events = events
+					if err := events.finish(); err != nil {
+						item.err = errors.Join(
+							item.err,
+							fmt.Errorf("buffer callbacks for %q: %w", candidate.path, err),
+						)
+					}
+				}
+				results <- item
 			}
 		}()
 	}
@@ -129,64 +154,27 @@ func scanAndAnalyzeFiles(
 				addFileCounts(language, current.clocFile)
 				clocFiles[current.path] = current.clocFile
 			}
-			tokens <- struct{}{}
+			if current.events != nil && !current.ignored {
+				// The callback worker owns the events and the token until replay
+				// and cleanup finish, so slow callbacks also bound memory use.
+				callbacks.jobs <- callbackJob{path: current.path, events: current.events}
+			} else {
+				if current.events != nil {
+					if err := current.events.discard(); err != nil {
+						callbacks.report(fmt.Errorf("discard callbacks for %q: %w", current.path, err))
+					}
+				}
+				tokens <- struct{}{}
+			}
 			nextSequence++
 		}
 	}
 
-	return result, clocFiles, <-walkErrors
-}
-
-// Discovery and callbacks stay on the caller's goroutine. When deduplication
-// is enabled, duplicates are removed before any line-level callbacks or logs.
-func analyzeWithCallbacks(
-	paths []string,
-	languages *DefinedLanguages,
-	opts *ClocOptions,
-) (map[string]*Language, map[string]*ClocFile, error) {
-	result, err := getAllFiles(paths, languages, opts)
-	if err != nil {
-		return nil, nil, err
+	var callbackErr error
+	if callbacks != nil {
+		callbackErr = callbacks.finish()
 	}
-	return result, analyzeFiles(result, opts), nil
-}
-
-// getAllFiles discovers and deduplicates before analysis so excluded copies
-// never trigger callbacks, even when debug mode is enabled alongside callbacks.
-func getAllFiles(paths []string, languages *DefinedLanguages, opts *ClocOptions) (map[string]*Language, error) {
-	result := make(map[string]*Language)
-	fileCache := make(map[string]struct{})
-	for _, root := range paths {
-		err := walkCandidateFiles(root, opts, func(path string) error {
-			ext, recognized := getFileType(path, opts)
-			languageKey, known := Exts[ext]
-			if !recognized || !known {
-				return nil
-			}
-			if !includeLanguage(languageKey, opts) {
-				return nil
-			}
-			if !opts.SkipDuplicated {
-				digest, err := hashFile(path)
-				if err != nil {
-					opts.warn(err)
-					return nil
-				}
-				if duplicateDigest(digest, fileCache) {
-					if opts.Debug {
-						opts.diagnosticf("[SKIP] file=%q reason=\"duplicate content\"\n", path)
-					}
-					return nil
-				}
-			}
-			addFileToResult(result, languages, languageKey, path)
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return result, nil
+	return result, clocFiles, errors.Join(<-walkErrors, callbackErr)
 }
 
 func includeLanguage(languageKey string, opts *ClocOptions) bool {
@@ -204,28 +192,4 @@ func addFileCounts(language *Language, file *ClocFile) {
 	language.Code += file.Code
 	language.Comments += file.Comments
 	language.Blanks += file.Blanks
-}
-
-// Only the callback compatibility path uses this synchronous analysis pass.
-func analyzeFiles(languages map[string]*Language, opts *ClocOptions) map[string]*ClocFile {
-	fileCount := 0
-	for _, language := range languages {
-		fileCount += len(language.Files)
-	}
-	clocFiles := make(map[string]*ClocFile, fileCount)
-	for _, language := range languages {
-		kept := language.Files[:0]
-		for _, path := range language.Files {
-			file, err := analyzeFile(path, language, opts)
-			if err != nil {
-				opts.warn(err)
-				continue
-			}
-			kept = append(kept, path)
-			clocFiles[path] = file
-			addFileCounts(language, file)
-		}
-		language.Files = kept
-	}
-	return clocFiles
 }

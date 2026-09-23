@@ -129,7 +129,16 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 			opts.SkipDuplicated = false
 			langs := NewDefinedLanguages()
 			reader := newLineReader(nil)
-			ext, recognized := getFileType(path, opts)
+			ext, recognized := detectFileType(path, opts, func(all bool) ([]byte, error) {
+				content := []byte(tc.content)
+				if all {
+					return content, nil
+				}
+				if end := bytes.IndexByte(content, '\n'); end >= 0 {
+					return content[:end+1], nil
+				}
+				return content, io.EOF
+			})
 			key, known := Exts[ext]
 			got := detectAndAnalyzeFile(fileCandidate{path: path}, langs, opts, reader)
 			if !recognized || !known {

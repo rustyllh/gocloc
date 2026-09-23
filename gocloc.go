@@ -24,14 +24,6 @@ func resolveWorkerCount(opts *ClocOptions) int {
 	return opts.Workers
 }
 
-func requiresSynchronousCallbacks(opts *ClocOptions) bool {
-	if opts == nil {
-		return false
-	}
-	hasCallbacks := opts.OnCode != nil || opts.OnBlank != nil || opts.OnComment != nil
-	return hasCallbacks
-}
-
 // NewProcessor returns Processor.
 func NewProcessor(langs *DefinedLanguages, options *ClocOptions) *Processor {
 	return &Processor{
@@ -44,16 +36,7 @@ func NewProcessor(langs *DefinedLanguages, options *ClocOptions) *Processor {
 func (p *Processor) Analyze(paths []string) (*Result, error) {
 	opts := p.opts.withDiagnostics()
 	total := NewLanguage("TOTAL", []string{}, [][]string{{"", ""}})
-	var (
-		languages map[string]*Language
-		clocFiles map[string]*ClocFile
-		err       error
-	)
-	if requiresSynchronousCallbacks(opts) {
-		languages, clocFiles, err = analyzeWithCallbacks(paths, p.langs, opts)
-	} else {
-		languages, clocFiles, err = scanAndAnalyzeFiles(paths, p.langs, opts)
-	}
+	languages, clocFiles, err := scanAndAnalyzeFiles(paths, p.langs, opts)
 	if err != nil {
 		return nil, err
 	}

@@ -67,10 +67,12 @@ Append CLI options after the image name, for example `--dedup -o json .`.
 
 All tools scanned the Go repository revision above with `dist`, `node_modules`, and `target` excluded. The command output is from a representative warm-cache run. The `time` lines are warm-cache averages: 10 runs for tokei and upstream gocloc, 30 runs for optimized gocloc (three batches of 10), and 3 runs for cloc. Optimized gocloc uses 8 workers.
 
-Optimized gocloc was retested on 2026-09-20 with macOS 27.0, after warm-up and with stdout redirected to `/dev/null`.
-Measurements alternated with the earlier optimized build `0660fd9`, compiled with the same Go toolchain; their counting output matched exactly.
-Other results are historical measurements on macOS 26.6.1 and have not been rerun; this is not a controlled same-environment comparison.
-Both gocloc results use deduplication; the current optimized command enables it explicitly with `--dedup`.
+Optimized gocloc and tokei were retested on 2026-09-23 with macOS 27.0. Runs were interleaved after two untimed warm-up runs per command, with timed stdout redirected to `/dev/null`.
+Go runtime settings were `GOMAXPROCS=8`, `GOGC=100`, and `GOMEMLIMIT=off`. Background applications were active; no samples were discarded.
+Median elapsed times were 0.225 s for optimized gocloc with deduplication and 0.210 s for tokei.
+cloc and upstream gocloc retain historical measurements on macOS 26.6.1; the full comparison is not a controlled same-environment test.
+Both gocloc output blocks below use deduplication; the optimized command enables it explicitly with `--dedup`.
+These CLI measurements do not register library callbacks and do not measure deferred callback replay.
 
 ### cloc
 
@@ -120,7 +122,7 @@ $ time tokei . -e '{dist,node_modules,target}/' -s lines -C
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Total                 14256      3803655      2787281       711745       304629
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-tokei . -e '{dist,node_modules,target}/' -s lines -C  0.593s user 0.738s system 628.1% cpu 0.212 total
+tokei . -e '{dist,node_modules,target}/' -s lines -C  0.580s user 0.765s system 608.6% cpu 0.222 total
 ```
 
 ### upstream gocloc (https://github.com/hhatto/gocloc)
@@ -166,8 +168,12 @@ JavaScript                       9            301            332           1705
 -------------------------------------------------------------------------------
 TOTAL                        13995         310202         509643        2924932
 -------------------------------------------------------------------------------
-gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .  0.523s user 0.852s system 619.5% cpu 0.222 total
+gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .  0.517s user 0.822s system 581.1% cpu 0.232 total
 ```
+
+Without `--dedup` (the default), optimized gocloc counted 14,225 files with the same exclusions and 8 workers.
+Over 30 interleaved warm-cache runs, elapsed time averaged **0.210 s**, with a median of **0.197 s**.
+Counting rules differ between tools, so similar timings do not imply identical work.
 
 ## Usage
 
@@ -208,6 +214,42 @@ Older releases enabled deduplication by default; use `--dedup` to retain that be
 `--debug` writes analysis activity to stderr without disabling parallel workers.
 Line records include the file path and line number; records from different files may interleave.
 With `--dedup`, a duplicate can produce analysis logs before a `[SKIP]` record excludes it from the totals.
+
+### Library callbacks
+
+`Processor.Analyze` runs `OnCode`, `OnComment`, and `OnBlank` in workers. With multiple
+workers, callbacks from different files may run concurrently; callers must protect shared state.
+For example, pass these options to `NewProcessor` (the counter uses `sync/atomic`):
+
+```go
+options := gocloc.NewClocOptions()
+options.Workers = 8
+options.SkipDuplicated = false // Optional: count identical content only once.
+var codeLines atomic.Int64
+options.OnCode = func(string) { codeLines.Add(1) }
+```
+
+Calls within one file follow line order; order across files is unspecified. `Workers` limits
+concurrent callback execution as well as file analysis. Set `Workers = 1` for non-overlapping
+callbacks within one `Analyze` call; this does not put callbacks on the caller's goroutine.
+Callbacks must return for `Analyze` to finish, and `Analyze` waits for all callbacks before
+returning, including on errors. `AnalyzeFile` and `AnalyzeReader` remain synchronous.
+This changes the earlier library contract that kept processor callbacks on the caller's goroutine.
+Existing callers must synchronize shared state or explicitly use one worker.
+
+Callbacks follow the deduplication setting. Without deduplication, every copy triggers callbacks
+during analysis; later read errors cannot undo calls already made. With deduplication, workers
+read each source file once while hashing, counting, and recording callback events. Results are
+deduplicated in discovery order, then only the first retained copy's events are replayed in
+callback workers. Failed source reads and discarded copies do not trigger callbacks. Debug
+logs still show actual analysis, including discarded copies.
+
+Deferred events share a 16 MiB in-memory buffer-capacity budget per scan (not a total process
+memory limit). Large buffers spill to private files in the OS temporary directory and are
+removed after replay or exclusion. Queued spools do not hold open file descriptors. Parser
+buffers, individual callback strings, and memory retained by callers are outside this budget.
+Spool write failures exclude the affected file with a diagnostic; replay or cleanup failures
+are returned after workers finish. Already delivered callbacks cannot be rolled back.
 
 ## Jenkins
 
