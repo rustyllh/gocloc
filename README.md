@@ -67,13 +67,6 @@ Append CLI options after the image name, for example `--dedup -o json .`.
 
 All tools scanned the Go repository revision above with `dist`, `node_modules`, and `target` excluded. The command output is from a representative warm-cache run. The `time` lines are warm-cache averages: 10 runs for tokei and upstream gocloc, 30 runs for optimized gocloc (three batches of 10), and 3 runs for cloc. Optimized gocloc uses 8 workers.
 
-Optimized gocloc and tokei were retested on 2026-09-23 with macOS 27.0. Runs were interleaved after two untimed warm-up runs per command, with timed stdout redirected to `/dev/null`.
-Go runtime settings were `GOMAXPROCS=8`, `GOGC=100`, and `GOMEMLIMIT=off`. Background applications were active; no samples were discarded.
-Median elapsed times were 0.225 s for optimized gocloc with deduplication and 0.210 s for tokei.
-cloc and upstream gocloc retain historical measurements on macOS 26.6.1; the full comparison is not a controlled same-environment test.
-Both gocloc output blocks below use deduplication; the optimized command enables it explicitly with `--dedup`.
-These CLI measurements do not register library callbacks and do not measure deferred callback replay.
-
 ### cloc
 
 ```
@@ -122,7 +115,7 @@ $ time tokei . -e '{dist,node_modules,target}/' -s lines -C
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Total                 14256      3803655      2787281       711745       304629
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-tokei . -e '{dist,node_modules,target}/' -s lines -C  0.580s user 0.765s system 608.6% cpu 0.222 total
+tokei . -e '{dist,node_modules,target}/' -s lines -C  0.593s user 0.738s system 628.1% cpu 0.212 total
 ```
 
 ### upstream gocloc (https://github.com/hhatto/gocloc)
@@ -151,29 +144,25 @@ gocloc-upstream --not-match-d='dist|node_modules|target' .  0.628s user 0.638s s
 ### optimized gocloc
 
 ```
-$ time gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .
+$ time gocloc --not-match-d='dist|node_modules|target' --workers=8 .
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-Go                           11482         273107         481370        2485725
-Plain Text                    1465          14779              0         233006
-Assembly                       652          16149          24083         149095
+Go                           11688         274481         484674        2518040
+Plain Text                    1473          14797              0         233098
+Assembly                       655          16158          24100         149107
 HTML                            15           2098            180          19987
-JSON                            40            124              0          14186
+JSON                            41            124              0          14186
 YAML                            59            326            361           6095
-C                              113            968            846           5546
-Markdown                        59           1391             35           4674
+C                              117            976            855           5600
+Markdown                        66           1397             35           4686
 BASH                            31            362           1144           2228
 JavaScript                       9            301            332           1705
 -------------------------------------------------------------------------------
-TOTAL                        13995         310202         509643        2924932
+TOTAL                        14225         311618         512976        2957420
 -------------------------------------------------------------------------------
-gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .  0.517s user 0.822s system 581.1% cpu 0.232 total
+gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.325s user 0.890s system 580.1% cpu 0.210 total
 ```
-
-Without `--dedup` (the default), optimized gocloc counted 14,225 files with the same exclusions and 8 workers.
-Over 30 interleaved warm-cache runs, elapsed time averaged **0.210 s**, with a median of **0.197 s**.
-Counting rules differ between tools, so similar timings do not imply identical work.
 
 ## Usage
 

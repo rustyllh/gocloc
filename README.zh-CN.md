@@ -68,13 +68,6 @@ docker run --rm --read-only --mount "type=bind,source=$(pwd),target=/workdir,rea
 所有工具均扫描上述 Go 仓库版本，并排除 `dist`、`node_modules` 和 `target` 目录。
 命令输出取自一次有代表性的热缓存运行；`time` 行为热缓存平均值：tokei 和上游 gocloc 各运行 10 次，优化版 gocloc 运行 30 次（分为 3 组，每组 10 次），cloc 运行 3 次。优化版 gocloc 使用 8 个 worker。
 
-优化版 gocloc 和 tokei 于 2026-09-23 在 macOS 27.0 上重新测试。每条命令先进行两次不计时预热，随后交错测量，计时期间将 stdout 重定向到 `/dev/null`。
-Go 运行时设置为 `GOMAXPROCS=8`、`GOGC=100`、`GOMEMLIMIT=off`。测试时有后台应用运行，未剔除任何样本。
-优化版 gocloc 开启去重时的耗时中位数为 0.225 s，tokei 为 0.210 s。
-cloc 和上游 gocloc 保留自 macOS 26.6.1 上的历史测试，因此整组结果不是严格的同环境对比。
-下面两个 gocloc 输出块均启用了去重；优化版通过 `--dedup` 显式开启。
-这些 CLI 测量没有注册库回调，不涵盖延迟回调的回放开销。
-
 ### cloc
 
 ```
@@ -123,7 +116,7 @@ $ time tokei . -e '{dist,node_modules,target}/' -s lines -C
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Total                 14256      3803655      2787281       711745       304629
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-tokei . -e '{dist,node_modules,target}/' -s lines -C  0.580s user 0.765s system 608.6% cpu 0.222 total
+tokei . -e '{dist,node_modules,target}/' -s lines -C  0.593s user 0.738s system 628.1% cpu 0.212 total
 ```
 
 ### 上游 gocloc（https://github.com/hhatto/gocloc）
@@ -152,29 +145,25 @@ gocloc-upstream --not-match-d='dist|node_modules|target' .  0.628s user 0.638s s
 ### 优化版 gocloc
 
 ```
-$ time gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .
+$ time gocloc --not-match-d='dist|node_modules|target' --workers=8 .
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-Go                           11482         273107         481370        2485725
-Plain Text                    1465          14779              0         233006
-Assembly                       652          16149          24083         149095
+Go                           11688         274481         484674        2518040
+Plain Text                    1473          14797              0         233098
+Assembly                       655          16158          24100         149107
 HTML                            15           2098            180          19987
-JSON                            40            124              0          14186
+JSON                            41            124              0          14186
 YAML                            59            326            361           6095
-C                              113            968            846           5546
-Markdown                        59           1391             35           4674
+C                              117            976            855           5600
+Markdown                        66           1397             35           4686
 BASH                            31            362           1144           2228
 JavaScript                       9            301            332           1705
 -------------------------------------------------------------------------------
-TOTAL                        13995         310202         509643        2924932
+TOTAL                        14225         311618         512976        2957420
 -------------------------------------------------------------------------------
-gocloc --dedup --not-match-d='dist|node_modules|target' --workers=8 .  0.517s user 0.822s system 581.1% cpu 0.232 total
+gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.325s user 0.890s system 580.1% cpu 0.210 total
 ```
-
-不使用 `--dedup`（默认行为）时，优化版 gocloc 在相同排除条件和 8 个 worker 下统计了 14,225 个文件。
-30 次交错热缓存测量的平均耗时为 **0.210 s**，中位数为 **0.197 s**。
-各工具的统计规则不同，耗时接近不代表完成了完全相同的工作。
 
 ## 使用
 
