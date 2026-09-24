@@ -37,14 +37,6 @@ Both installers execute downloaded code; review [install.sh](install.sh) or [ins
 Run the installer again to upgrade, then check `gocloc --version`.
 Alternatively, download a binary and its checksums from [GitHub Releases](https://github.com/rustyllh/gocloc/releases).
 
-### Go
-
-With the latest stable Go release:
-
-```sh
-go install github.com/rustyllh/gocloc/cmd/gocloc@latest
-```
-
 ### Docker
 
 Run against the current directory with a read-only mount:
@@ -58,110 +50,179 @@ Append CLI options after the image name, for example `--dedup -o json .`.
 
 ## Performance
 
-* CPU Apple M3 8-core / 16 GiB / macOS arm64 / Go 1.26.6
+* CPU Apple M3 8-core / 16 GiB / macOS 27.0 arm64 / Go 1.26.6
 * cloc 2.04
 * tokei 14.0.0 compiled with serialization support: json
 * upstream gocloc [679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d)
-* optimized gocloc, based on upstream [679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d)
-* target repository is [golang/go](https://github.com/golang/go), branch `master`, commit [be1160f](https://github.com/golang/go/commit/be1160f2a446665d6c0ccd2344c0cbe365bbc3a4)
+* optimized gocloc: `0.1.9 (488b23c)`
+* target repository is [golang/go](https://github.com/golang/go), branch `master`, commit [6b3800e](https://github.com/golang/go/commit/6b3800e1dd90925b4184acd6391f68bffd16b6a5)
 
-All tools scanned the Go repository revision above with `dist`, `node_modules`, and `target` excluded. The command output is from a representative warm-cache run. The `time` lines are warm-cache averages: 10 runs for tokei and upstream gocloc, 30 runs for optimized gocloc (three batches of 10), and 3 runs for cloc. Optimized gocloc uses 8 workers.
+All tools scanned the repository above using default options. The command output is from a representative warm-cache run. The `time` lines are warm-cache averages: 10 runs for tokei and upstream gocloc, 30 runs for optimized gocloc, and 3 runs for cloc.
 
 ### cloc
 
 ```
-$ time cloc --exclude-dir=dist,node_modules,target .
-
+$ time cloc .
 3 errors:
 Line count, exceeded timeout:  ./src/net/http/requestwrite_test.go
 Line count, exceeded timeout:  ./src/vendor/golang.org/x/net/idna/tables15.0.0.go
 Line count, exceeded timeout:  ./src/vendor/golang.org/x/net/idna/tables17.0.0.go
-github.com/AlDanial/cloc v 2.04  T=25.75 s (544.9 files/s, 146368.5 lines/s)
+github.com/AlDanial/cloc v 2.04  T=26.55 s (530.8 files/s, 142732.0 lines/s)
 -----------------------------------------------------------------------------------
 Language                         files          blank        comment           code
 -----------------------------------------------------------------------------------
-Go                               11471         273077         457997        2509333
-Text                              1470          14788              0         233053
-Assembly                           652          16138          24084         149105
+Go                               11519         274964         460748        2523775
+Text                              1473          14804              0         233134
+Assembly                           656          16184          24182         149525
 HTML                                15           2098             50          20117
-Snakemake                           28           2200              0          19016
+Snakemake                           28           2202              0          19021
 JSON                                40            124              0          14186
-YAML                                68            361            364           6563
+YAML                                68            361            364           6564
 C                                  113            968            845           5547
-Markdown                            61           1398             35           4684
+Markdown                            64           1443             36           4840
 CSV                                  1              0              0           2118
+Bourne Shell                        19            273            914           1761
+JavaScript                           9            301            331           1706
+Perl                                 9            163            163           1058
+C/C++ Header                        27            153            368            798
+Bourne Again Shell                  16            112            248            516
+Python                               2            155            187            425
+CSS                                  4              5             13            360
+Windows Resource File                4             23              0            146
+DOS Batch                            5             35             57            120
+Logos                                2             16              0            101
+Dockerfile                           2             15             18             61
+diff                                 1              7             20             36
+C++                                  2             11             14             24
+make                                 6              9             34             22
+Objective-C                          1              2              3             11
+Fortran 90                           2              1              3              8
+awk                                  1              1              6              7
+MATLAB                               1              1              0              4
 -----------------------------------------------------------------------------------
-SUM:                             14032         312435         485754        2970886
+SUM:                             14090         314431         488604        2985991
 -----------------------------------------------------------------------------------
-cloc --exclude-dir=dist,node_modules,target .  22.657s user 1.570s system 90.7% cpu 26.583 total
+cloc .  23.151s user 1.617s system 94.3% cpu 26.104 total
 ```
 
 ### tokei
 
 ```
-$ time tokei . -e '{dist,node_modules,target}/' -s lines -C
+$ time tokei .
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Language              Files        Lines         Code     Comments       Blanks
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Go                    11674      3277332      2557810       451710       267812
- Plain Text             1475       247946            0       233140        14806
- GNU Style Assembly      655       189365       153620        19596        16149
- Snakemake                28        21216        19871            0         1345
- JSON                     38        14287        14163            0          124
- HTML                     15        12849        12465           37          347
+ AWK                       1           14            7            6            1
+ Alex                      2          117          101            0           16
+ GNU Style Assembly      659       189929       154061        19670        16198
+ Autoconf                  9          283          274            0            9
+ BASH                     16          876          502          264          110
+ Batch                     5          212          120           57           35
  C                       117         7431         5657          856          918
- YAML                     59         6782         6135          331          316
- Markdown                 66         5562            0         4165         1397
+ C Header                 28         1326          801          371          154
+ C++                       2           49           24           14           11
+ CSS                       4          378          360           13            5
+ Dockerfile                2           94           61           18           15
+ Forge Config              3            3            3            0            0
+ FORTRAN Modern            2           12            8            3            1
+ Go                    11728      3302392      2575946       455985       270461
+ JavaScript                9         2338         1705          332          301
+ JSON                     38        14287        14163            0          124
+ Makefile                  6           65           22           34            9
+ Objective-C               2           21           15            3            3
+ Perl                      9         1384         1049          172          163
+ Python                    2          767          482          142          143
+ Shell                    19         2948         2371          380          197
+ Snakemake                28        21223        19878            0         1345
+ Templ                     8           20           20            0            0
+ Plain Text             1478       248043            0       233221        14822
+ YAML                     59         6783         6136          331          316
+─────────────────────────────────────────────────────────────────────────────────
+ HTML                     15        12849        12465           37          347
+ |- CSS                    3         2060         1841           10          209
+ |- HTML                   1          219          212            0            7
+ |- JavaScript             8         7143         7026           91           26
+ (Total)                            22271        21544          138          589
+─────────────────────────────────────────────────────────────────────────────────
+ Markdown                 68         5751            0         4311         1440
+ |- Go                     2          562          559            3            0
+ (Total)                             6313          559         4314         1440
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Total                 14256      3803655      2787281       711745       304629
+ Total                 14319      3829579      2805869       716324       307386
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-tokei . -e '{dist,node_modules,target}/' -s lines -C  0.593s user 0.738s system 628.1% cpu 0.212 total
+tokei .  0.569s user 0.758s system 552.5% cpu 0.261 total
 ```
 
 ### upstream gocloc (https://github.com/hhatto/gocloc)
 
 ```
-$ time gocloc-upstream --not-match-d='dist|node_modules|target' .
+$ time gocloc-upstream .
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-Go                           11482         273107         481370        2485725
-Plain Text                    1465          14779              0         233006
-Assembly                       652          16149          24083         149095
+Go                           11534         275074         485096        2500003
+Plain Text                    1468          14795              0         233087
+Assembly                       656          16198          24181         149512
 HTML                            15           2098            180          19987
 JSON                            40            124              0          14186
-YAML                            59            326            361           6095
+YAML                            59            326            361           6096
 C                              113            968            846           5546
-Markdown                        59           1391             35           4674
+Markdown                        62           1436             36           4830
 BASH                            31            362           1144           2228
 JavaScript                       9            301            332           1705
+C Header                        27            153            368            798
+Perl                             9            163            581            640
+Python                           2            155            187            425
+CSS                              4              5             13            360
+Batch                            5             35              0            177
+Plan9 Shell                      4             23             47             99
+Dockerfile                       2             15             18             61
+Bourne Shell                     4             23             18             49
+C++                              2             11             14             24
+Makefile                         6              9             34             22
+Objective-C                      2              3              3             15
+FORTRAN Modern                   2              1              3              8
+Awk                              1              1              6              7
 -------------------------------------------------------------------------------
-TOTAL                        13995         310202         509643        2924932
+TOTAL                        14057         312279         513468        2939865
 -------------------------------------------------------------------------------
-gocloc-upstream --not-match-d='dist|node_modules|target' .  0.628s user 0.638s system 110.3% cpu 1.142 total
+gocloc-upstream .  0.609s user 0.947s system 105.3% cpu 1.476 total
 ```
 
 ### optimized gocloc
 
 ```
-$ time gocloc --not-match-d='dist|node_modules|target' --workers=8 .
+$ time gocloc .
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-Go                           11688         274481         484674        2518040
-Plain Text                    1473          14797              0         233098
-Assembly                       655          16158          24100         149107
+Go                           11746         277212         489930        2536004
+Plain Text                    1476          14813              0         233179
+Assembly                       659          16207          24198         149524
 HTML                            15           2098            180          19987
 JSON                            41            124              0          14186
-YAML                            59            326            361           6095
+YAML                            59            326            361           6096
 C                              117            976            855           5600
-Markdown                        66           1397             35           4686
+Markdown                        68           1440             36           4837
 BASH                            31            362           1144           2228
 JavaScript                       9            301            332           1705
+C Header                        28            154            371            801
+Perl                             9            163            581            640
+Python                           2            155            187            425
+CSS                              4              5             13            360
+Batch                            5             35              0            177
+Plan9 Shell                      4             23             47             99
+Dockerfile                       2             15             18             61
+Bourne Shell                     4             23             18             49
+C++                              2             11             14             24
+Makefile                         6              9             34             22
+Objective-C                      2              3              3             15
+FORTRAN Modern                   2              1              3              8
+Awk                              1              1              6              7
 -------------------------------------------------------------------------------
-TOTAL                        14225         311618         512976        2957420
+TOTAL                        14292         314457         518331        2976034
 -------------------------------------------------------------------------------
-gocloc --not-match-d='dist|node_modules|target' --workers=8 .  0.325s user 0.890s system 580.1% cpu 0.210 total
+gocloc .  0.308s user 0.895s system 550.3% cpu 0.222 total
 ```
 
 ## Usage
