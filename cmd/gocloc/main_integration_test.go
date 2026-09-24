@@ -215,13 +215,18 @@ func TestCLIIntegration(t *testing.T) {
 			{name: "defaults", args: []string{"."}},
 			{name: "all languages", args: []string{"--show-lang"}},
 			{name: "debug", args: []string{"--debug", "src/copy.go"}},
-			{name: "filters", args: []string{"--not-match-d=target", "--include-lang=Go,Python", "."}},
+			// These filtered totals tie on code lines, so use a deterministic order
+			// for byte-for-byte comparisons. Default tie order is unspecified.
+			{
+				name: "filters",
+				args: []string{"--not-match-d=target", "--include-lang=Go,Python", "--sort=name", "."},
+			},
 			{name: "no deduplication", args: []string{"--skip-duplicated", "--sort=name", "."}},
 			{name: "deduplication", args: []string{"--skip-duplicated=false", "--sort=name", "."}},
 			{name: "serial", args: []string{"--workers=1", "."}},
 			{name: "parallel", args: []string{"--workers=8", "."}},
 			{name: "decimal leading zero", args: []string{"--workers=08", "."}},
-			{name: "interspersed", args: []string{"src", "--workers", "2", "scripts"}},
+			{name: "interspersed", args: []string{"src", "--workers", "2", "scripts", "--sort=name"}},
 			{name: "exclude extensions", args: []string{"--exclude-ext=py,txt", "."}},
 			{name: "fullpath", args: []string{"--fullpath", `--match=^scripts[/\\]`, "."}},
 			{name: "include directory", args: []string{"--match-d=src", "."}},

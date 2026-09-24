@@ -265,18 +265,54 @@ Older releases enabled deduplication by default; use `--dedup` to retain that be
 Line records include the file path and line number; records from different files may interleave.
 With `--dedup`, a duplicate can produce analysis logs before a `[SKIP]` record excludes it from the totals.
 
-### Library callbacks
+### Go library
 
-`Processor.Analyze` runs `OnCode`, `OnComment`, and `OnBlank` in workers. With multiple
-workers, callbacks from different files may run concurrently; callers must protect shared state.
-For example, pass these options to `NewProcessor` (the counter uses `sync/atomic`):
+Use the built-in languages without constructing a processor:
 
 ```go
-options := gocloc.NewClocOptions()
-options.Workers = 8
-options.SkipDuplicated = false // Optional: count identical content only once.
+result, err := gocloc.Analyze([]string{"."}, nil)
+```
+
+Pass lists and regular expressions directly when filtering:
+
+```go
+result, err := gocloc.Analyze([]string{"src", "tests"}, &gocloc.Options{
+    IncludeLangs: []string{"Go", "Python"},
+    ExcludeExts:  []string{"txt"},
+    NotMatchDir:  `(^|[/\\])(dist|node_modules|target)([/\\]|$)`,
+    Dedup:        true, // Optional: count identical content only once.
+})
+```
+
+Check `err` before using `result`. `nil` and `&gocloc.Options{}` both default to no
+deduplication and `runtime.GOMAXPROCS(0)` workers, capped at 64. `Workers: 1` selects
+one worker; explicit values outside 1–64 are rejected, while zero selects automatically.
+An empty path list returns an empty result, not a scan of the current directory.
+
+Filters are prepared once per call. Invalid options return `*gocloc.OptionError` before
+scanning. File regexes use base names unless `Fullpath` is true; directory regexes always
+use directory paths. Like the CLI, `ExcludeExts` excludes the detected language associated
+with each extension, including aliases. `IncludeLangs` ignores unknown names; if none of
+the supplied names are recognized, no language inclusion filter is applied.
+
+`NewProcessor` and `ClocOptions` remain available for custom language rules and existing
+callers, with their defaults unchanged: `Workers <= 1` uses one worker, `ClocOptions{}`
+enables deduplication, and `NewClocOptions()` disables it.
+See [examples/files](examples/files/main.go) and [examples/languages](examples/languages/main.go)
+for complete programs.
+
+### Library callbacks
+
+`Analyze` and `Processor.Analyze` run `OnCode`, `OnComment`, and `OnBlank` in workers. With multiple
+workers, callbacks from different files may run concurrently; callers must protect shared state.
+For example, pass these options to `gocloc.Analyze` (the counter uses `sync/atomic`):
+
+```go
 var codeLines atomic.Int64
-options.OnCode = func(string) { codeLines.Add(1) }
+options := &gocloc.Options{
+    Dedup:  true, // Optional: count identical content only once.
+    OnCode: func(string) { codeLines.Add(1) },
+}
 ```
 
 Calls within one file follow line order; order across files is unspecified. `Workers` limits

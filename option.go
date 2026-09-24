@@ -8,7 +8,10 @@ import (
 // MaxWorkers limits fixed worker configurations to a bounded resource footprint.
 const MaxWorkers = 64
 
-// ClocOptions is gocloc processor options.
+// ClocOptions configures Processor, AnalyzeFile and AnalyzeReader.
+// Its historical defaults are preserved: Workers <= 1 selects one worker and
+// the zero value enables deduplication. NewClocOptions disables deduplication.
+// For automatic concurrency and consistent zero-value defaults, use Options with Analyze.
 type ClocOptions struct {
 	// Debug logs analysis activity, not just files included in the result.
 	// Records from different files may interleave when using multiple workers.

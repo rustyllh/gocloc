@@ -1,10 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"regexp"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -33,9 +32,9 @@ type CmdOptions struct {
 	ShowVersion    bool
 }
 
-func configureWorkerOptions(opts CmdOptions, clocOpts *gocloc.ClocOptions) error {
+func configureWorkerOptions(opts CmdOptions, analysisOpts *gocloc.Options) error {
 	if opts.Workers == nil {
-		clocOpts.Workers = automaticWorkerCount()
+		analysisOpts.Workers = 0
 		return nil
 	}
 	if *opts.Workers < 0 {
@@ -47,12 +46,8 @@ func configureWorkerOptions(opts CmdOptions, clocOpts *gocloc.ClocOptions) error
 	if *opts.Workers > gocloc.MaxWorkers {
 		return fmt.Errorf("--workers must not exceed %d", gocloc.MaxWorkers)
 	}
-	clocOpts.Workers = *opts.Workers
+	analysisOpts.Workers = *opts.Workers
 	return nil
-}
-
-func automaticWorkerCount() int {
-	return runtime.GOMAXPROCS(0)
 }
 
 func newRootCommand() *cobra.Command {
@@ -93,8 +88,8 @@ func newRootCommand() *cobra.Command {
 			if cmd.Flags().Changed("skip-duplicated") {
 				opts.Dedup = !opts.SkipDuplicated
 			}
-			clocOpts := gocloc.NewClocOptions()
-			if err := configureWorkerOptions(opts, clocOpts); err != nil {
+			analysisOpts := &gocloc.Options{}
+			if err := configureWorkerOptions(opts, analysisOpts); err != nil {
 				return err
 			}
 			if opts.ShowVersion {
@@ -110,8 +105,13 @@ func newRootCommand() *cobra.Command {
 			if len(paths) == 0 {
 				return cmd.Help()
 			}
-			clocOpts.Diagnostics = cmd.ErrOrStderr()
-			return runAnalysis(paths, opts, clocOpts, cmd.OutOrStdout())
+			analysisOpts.Diagnostics = cmd.ErrOrStderr()
+			return runAnalysis(
+				paths,
+				opts,
+				analysisOpts,
+				cmd.OutOrStdout(),
+			)
 		},
 	}
 	command.DisableFlagsInUseLine = true
@@ -265,58 +265,33 @@ func (v *sortTagValue) Set(value string) error {
 	}
 }
 
-func runAnalysis(paths []string, opts CmdOptions, clocOpts *gocloc.ClocOptions, out io.Writer) error {
+func runAnalysis(paths []string, opts CmdOptions, analysisOpts *gocloc.Options, out io.Writer) error {
 	// check sort tag option with other options
 	if opts.ByFile && opts.SortTag == "files" {
 		return fmt.Errorf("`--sort files` option cannot be used in conjunction with the `--by-file` option")
 	}
-	languages := gocloc.NewDefinedLanguages()
+	analysisOpts.ExcludeExts = strings.Split(opts.ExcludeExt, ",")
+	analysisOpts.IncludeLangs = strings.Split(opts.IncludeLang, ",")
+	analysisOpts.Match = opts.Match
+	analysisOpts.NotMatch = opts.NotMatch
+	analysisOpts.MatchDir = opts.MatchDir
+	analysisOpts.NotMatchDir = opts.NotMatchDir
+	analysisOpts.Debug = opts.Debug
+	analysisOpts.Dedup = opts.Dedup
+	analysisOpts.Fullpath = opts.Fullpath
 
-	// setup option for exclude extensions
-	for _, ext := range strings.Split(opts.ExcludeExt, ",") {
-		e, ok := gocloc.Exts[ext]
-		if ok {
-			clocOpts.ExcludeExts[e] = struct{}{}
-		} else {
-			clocOpts.ExcludeExts[ext] = struct{}{}
-		}
-	}
-
-	// directory and file matching options
-	for _, filter := range []struct {
-		name    string
-		pattern string
-		target  **regexp.Regexp
-	}{
-		{name: "match", pattern: opts.Match, target: &clocOpts.ReMatch},
-		{name: "not-match", pattern: opts.NotMatch, target: &clocOpts.ReNotMatch},
-		{name: "match-d", pattern: opts.MatchDir, target: &clocOpts.ReMatchDir},
-		{name: "not-match-d", pattern: opts.NotMatchDir, target: &clocOpts.ReNotMatchDir},
-	} {
-		if filter.pattern == "" {
-			continue
-		}
-		compiled, err := regexp.Compile(filter.pattern)
-		if err != nil {
-			return fmt.Errorf("invalid --%s: %w", filter.name, err)
-		}
-		*filter.target = compiled
-	}
-
-	// setup option for include languages
-	for _, lang := range strings.Split(opts.IncludeLang, ",") {
-		if _, ok := languages.Langs[lang]; ok {
-			clocOpts.IncludeLangs[lang] = struct{}{}
-		}
-	}
-
-	clocOpts.Debug = opts.Debug
-	clocOpts.SkipDuplicated = !opts.Dedup
-	clocOpts.Fullpath = opts.Fullpath
-
-	processor := gocloc.NewProcessor(languages, clocOpts)
-	result, err := processor.Analyze(paths)
+	result, err := gocloc.Analyze(paths, analysisOpts)
 	if err != nil {
+		var optionErr *gocloc.OptionError
+		if errors.As(err, &optionErr) {
+			flag := map[string]string{
+				"Match": "match", "NotMatch": "not-match",
+				"MatchDir": "match-d", "NotMatchDir": "not-match-d",
+			}[optionErr.Field]
+			if flag != "" {
+				return fmt.Errorf("invalid --%s: %w", flag, optionErr.Err)
+			}
+		}
 		return fmt.Errorf("fail gocloc analyze: %w", err)
 	}
 

@@ -18,7 +18,7 @@ import (
 
 func TestConfigureWorkerOptions(t *testing.T) {
 	t.Run("fixed worker count", func(t *testing.T) {
-		clocOpts := gocloc.NewClocOptions()
+		clocOpts := &gocloc.Options{}
 		if err := configureWorkerOptions(CmdOptions{Workers: workers(3)}, clocOpts); err != nil {
 			t.Fatal(err)
 		}
@@ -28,40 +28,48 @@ func TestConfigureWorkerOptions(t *testing.T) {
 	})
 
 	t.Run("omitted worker count uses automatic selection", func(t *testing.T) {
-		clocOpts := gocloc.NewClocOptions()
+		clocOpts := &gocloc.Options{}
 		if err := configureWorkerOptions(CmdOptions{}, clocOpts); err != nil {
 			t.Fatal(err)
 		}
-		if clocOpts.Workers != automaticWorkerCount() {
-			t.Fatalf("worker count = %d, want automatic value %d", clocOpts.Workers, automaticWorkerCount())
+		if clocOpts.Workers != 0 {
+			t.Fatalf("worker count = %d, want 0 for automatic selection", clocOpts.Workers)
 		}
 	})
 
 	t.Run("zero worker count is rejected", func(t *testing.T) {
-		if err := configureWorkerOptions(CmdOptions{Workers: workers(0)}, gocloc.NewClocOptions()); err == nil {
+		if err := configureWorkerOptions(CmdOptions{Workers: workers(0)}, &gocloc.Options{}); err == nil {
 			t.Fatal("configureWorkerOptions() error = nil, want error")
 		}
 	})
 
 	t.Run("negative worker count is rejected", func(t *testing.T) {
-		if err := configureWorkerOptions(CmdOptions{Workers: workers(-1)}, gocloc.NewClocOptions()); err == nil {
+		if err := configureWorkerOptions(CmdOptions{Workers: workers(-1)}, &gocloc.Options{}); err == nil {
 			t.Fatal("configureWorkerOptions() error = nil, want error")
 		}
 	})
 
 	t.Run("excessive worker count is rejected", func(t *testing.T) {
-		if err := configureWorkerOptions(CmdOptions{Workers: workers(gocloc.MaxWorkers + 1)}, gocloc.NewClocOptions()); err == nil {
+		if err := configureWorkerOptions(CmdOptions{Workers: workers(gocloc.MaxWorkers + 1)}, &gocloc.Options{}); err == nil {
 			t.Fatal("configureWorkerOptions() error = nil, want error")
 		}
 	})
 }
 
-func TestAutomaticWorkerCountUsesRuntimeLimit(t *testing.T) {
-	previous := runtime.GOMAXPROCS(9)
+func TestAutomaticWorkersSupportsLargeRuntimeLimit(t *testing.T) {
+	previous := runtime.GOMAXPROCS(gocloc.MaxWorkers + 1)
 	defer runtime.GOMAXPROCS(previous)
 
-	if got := automaticWorkerCount(); got != 9 {
-		t.Fatalf("automaticWorkerCount() = %d, want 9", got)
+	command := newRootCommand()
+	var stdout, stderr bytes.Buffer
+	command.SetOut(&stdout)
+	command.SetErr(&stderr)
+	command.SetArgs([]string{"-o", "json", t.TempDir()})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("automatic selection treated as an excessive explicit count: %v", err)
+	}
+	if stderr.Len() != 0 || !json.Valid(stdout.Bytes()) {
+		t.Fatalf("stdout=%q stderr=%q, want JSON without diagnostics", stdout.String(), stderr.String())
 	}
 }
 

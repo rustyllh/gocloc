@@ -2,22 +2,16 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/rustyllh/gocloc"
 )
 
 func main() {
-	languages := gocloc.NewDefinedLanguages()
-	options := gocloc.NewClocOptions()
-	paths := []string{
-		".",
-	}
-
-	processor := gocloc.NewProcessor(languages, options)
-	result, err := processor.Analyze(paths)
+	result, err := gocloc.Analyze([]string{"."}, nil)
 	if err != nil {
-		fmt.Printf("gocloc fail. error: %v\n", err)
-		return
+		fmt.Fprintf(os.Stderr, "gocloc: %v\n", err)
+		os.Exit(1)
 	}
 
 	for _, item := range result.Files {

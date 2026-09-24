@@ -265,18 +265,51 @@ gocloc -h
 逐行日志包含文件路径和行号，不同文件的日志允许交错。
 开启 `--dedup` 时，重复文件可能先输出分析日志，再通过 `[SKIP]` 日志标记为不计入统计。
 
-### 库回调
+### Go 库调用
 
-`Processor.Analyze` 在 worker 中执行 `OnCode`、`OnComment` 和 `OnBlank`。
-使用多个 worker 时，不同文件的回调可能并发执行，调用方需要保护共享状态。
-例如，将以下配置传给 `NewProcessor`（计数器使用 `sync/atomic`）：
+使用内置语言规则时，无需手动创建处理器：
 
 ```go
-options := gocloc.NewClocOptions()
-options.Workers = 8
-options.SkipDuplicated = false // 可选：内容相同的文件只统计一次。
+result, err := gocloc.Analyze([]string{"."}, nil)
+```
+
+需要过滤时，直接传入列表和正则表达式：
+
+```go
+result, err := gocloc.Analyze([]string{"src", "tests"}, &gocloc.Options{
+    IncludeLangs: []string{"Go", "Python"},
+    ExcludeExts:  []string{"txt"},
+    NotMatchDir:  `(^|[/\\])(dist|node_modules|target)([/\\]|$)`,
+    Dedup:        true, // 可选：内容相同的文件只统计一次。
+})
+```
+
+使用 `result` 前应检查 `err`。`nil` 和 `&gocloc.Options{}` 均默认不去重，
+worker 数量为 `runtime.GOMAXPROCS(0)`，最多 64 个。`Workers: 1` 使用单 worker；
+显式指定的数量必须在 1～64 之间，零值表示自动选择。
+路径列表为空时返回空结果，不会自动扫描当前目录。
+
+过滤配置每次调用只准备一次。配置不合法时，在扫描前返回 `*gocloc.OptionError`。
+文件正则默认匹配文件名，设置 `Fullpath` 后匹配完整路径；目录正则始终匹配目录路径。
+与 CLI 一致，`ExcludeExts` 排除的是扩展名对应的识别语言，包括该语言的其他扩展名。
+`IncludeLangs` 会忽略未知语言名；如果传入的名称都无法识别，则不限制统计语言。
+
+`NewProcessor` 和 `ClocOptions` 继续供自定义语言规则和已有调用方使用，默认行为不变：
+`Workers <= 1` 使用单 worker，`ClocOptions{}` 启用去重，`NewClocOptions()` 不去重。
+完整程序见 [examples/files](examples/files/main.go) 和 [examples/languages](examples/languages/main.go)。
+
+### 库回调
+
+`Analyze` 和 `Processor.Analyze` 在 worker 中执行 `OnCode`、`OnComment` 和 `OnBlank`。
+使用多个 worker 时，不同文件的回调可能并发执行，调用方需要保护共享状态。
+例如，将以下配置传给 `gocloc.Analyze`（计数器使用 `sync/atomic`）：
+
+```go
 var codeLines atomic.Int64
-options.OnCode = func(string) { codeLines.Add(1) }
+options := &gocloc.Options{
+    Dedup:  true, // 可选：内容相同的文件只统计一次。
+    OnCode: func(string) { codeLines.Add(1) },
+}
 ```
 
 同一文件内按行顺序调用，文件之间不保证调用顺序。`Workers` 同时限制文件分析和回调执行的并发度。
