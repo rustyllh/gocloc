@@ -16,3 +16,5 @@ docs/superpowers
 trace*.out
 gocloc.test
 /benchmark-results/
+
+docs
