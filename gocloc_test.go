@@ -234,9 +234,9 @@ func TestProcessorSingleWorkerCallbacksPreserveOrderAndDeduplication(t *testing.
 func TestProcessorCallbacksFollowDeduplication(t *testing.T) {
 	dir := t.TempDir()
 	for name, content := range map[string]string{
-		"a.go":        "package sample\n// sample\n\n",
-		"b.py":        "package sample\n// sample\n\n",
-		"c.go":        "package sample\n// sample\n\n",
+		"a.go":        "package sample\nvar s = \"/*\" // /*\n// sample\n\n",
+		"b.py":        "package sample\nvar s = \"/*\" // /*\n// sample\n\n",
+		"c.go":        "package sample\nvar s = \"/*\" // /*\n// sample\n\n",
 		"d.go":        "package other\n// other\n\n",
 		"ignored.xyz": "package other\n// other\n\n",
 		"excluded.go": "package excluded\n",
@@ -274,11 +274,13 @@ func TestProcessorCallbacksFollowDeduplication(t *testing.T) {
 					result := analyzeDirectory(t, dir, opts)
 					want := map[string]int{
 						"code:package sample": 1, "comment:// sample": 1,
-						"code:package other": 1, "comment:// other": 1, "blank:": 2,
+						"code:var s = \"/*\" // /*": 1,
+						"code:package other":        1, "comment:// other": 1, "blank:": 2,
 					}
 					wantFiles := int32(2)
 					if skip {
 						want["code:package sample"] = 3
+						want["code:var s = \"/*\" // /*"] = 3
 						want["comment:// sample"] = 2
 						want["code:// sample"] = 1
 						want["blank:"] = 4

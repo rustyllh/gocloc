@@ -15,6 +15,15 @@ import (
 
 func checkReaderAgainstReference(t testing.TB, language *Language, content string) {
 	t.Helper()
+	if language.syntax != nil {
+		// The frozen oracle contains the old C/Go lexical bugs. Keep testing
+		// its generic rule engine via an equivalent custom language; the new
+		// built-in lexer has explicit semantic tests in file_lexical_test.go.
+		legacy := *language
+		legacy.Name = "Legacy " + language.Name
+		legacy.syntax = nil
+		language = &legacy
+	}
 	type observation struct {
 		file        *ClocFile
 		err         error

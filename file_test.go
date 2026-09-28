@@ -175,6 +175,61 @@ func TestDetectAndAnalyzeFile(t *testing.T) {
 	}
 }
 
+func TestDetectAndAnalyzeFileAmbiguousLanguages(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		filename string
+		content  string
+		language string
+	}{
+		{
+			name: "TypeScript", filename: "sample.ts", language: "TypeScript",
+			content: "export const value: number = 1;\n",
+		},
+		{
+			name: "Objective-C", filename: "sample.m", language: "Objective-C",
+			content: "#import <Foundation/Foundation.h>\n@implementation Example\n@end\n",
+		},
+		{
+			name: "MATLAB", filename: "sample.m", language: "MATLAB",
+			content: "function y = square(x)\ny = x.^2;\nend\n",
+		},
+		{
+			name: "Verilog", filename: "sample.v", language: "Verilog",
+			content: "module example(input wire clk, output reg q);\nalways @(posedge clk) q <= 1'b1;\nendmodule\n",
+		},
+		{
+			name: "FSharp", filename: "sample.fs", language: "F#",
+			content: "module Example\nlet square x = x * x\nprintfn \"%d\" (square 2)\n",
+		},
+		{
+			name: "R", filename: "sample.r", language: "R",
+			content: "square <- function(x) { x ^ 2 }\nprint(square(2))\n",
+		},
+		{
+			name: "Motoko", filename: "sample.mo", language: "Motoko",
+			content: "actor { public query func greet() : async Text { \"hello\" } };\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), tt.filename)
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got := detectAndAnalyzeFile(
+				fileCandidate{path: path},
+				NewDefinedLanguages(),
+				&ClocOptions{SkipDuplicated: true},
+				newLineReader(nil),
+			)
+			if got.err != nil || got.ignored || got.languageKey != tt.language {
+				t.Fatalf("language=%q ignored=%t err=%v; want %q", got.languageKey, got.ignored, got.err, tt.language)
+			}
+		})
+	}
+}
+
 func TestAnalyzeFile4Python(t *testing.T) {
 	tmpfile := filepath.Join(t.TempDir(), "tmp.py")
 
@@ -313,7 +368,6 @@ func main() {
 }
 
 func TestAnalyzeFile4GoWithOnelineBlockComment(t *testing.T) {
-	t.SkipNow()
 	tmpfile := filepath.Join(t.TempDir(), "tmp.go")
 
 	if err := os.WriteFile(tmpfile, []byte(`package main

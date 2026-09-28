@@ -198,6 +198,12 @@ func analyzeLines(filename string, language *Language, reader *lineReader, opts 
 	}
 
 	isFirstLine := true
+	rules := syntaxForLanguage(language)
+	useSyntax := rules != nil
+	var scanner lineScanner
+	if useSyntax {
+		scanner = newLineScanner(rules)
+	}
 	inComments := [][2]string{}
 	// Reuse flags for every multiline-comment row instead of allocating per row.
 	codeFlags := make([]bool, len(language.multiLines))
@@ -215,6 +221,42 @@ scannerloop:
 		}
 
 		line := bytes.TrimSpace(lineOrg)
+		if useSyntax {
+			input := lineOrg
+			if isFirstLine {
+				input = bytes.TrimPrefix(input, []byte("\xef\xbb\xbf"))
+				line = bytes.TrimPrefix(line, []byte("\xef\xbb\xbf"))
+			}
+			isCode := scanner.scanLine(input, line)
+			isFirstLine = false
+			switch {
+			case len(line) == 0:
+				onBlank(
+					clocFile,
+					opts,
+					scanner.inComment(),
+					line,
+					lineOrg,
+				)
+			case isCode:
+				onCode(
+					clocFile,
+					opts,
+					scanner.inComment(),
+					line,
+					lineOrg,
+				)
+			default:
+				onComment(
+					clocFile,
+					opts,
+					scanner.inComment(),
+					line,
+					lineOrg,
+				)
+			}
+			continue
+		}
 
 		if len(line) == 0 {
 			onBlank(

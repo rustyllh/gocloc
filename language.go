@@ -24,6 +24,7 @@ type ClocLanguage struct {
 // Language is a type used to definitions and store statistics for one programming language.
 type Language struct {
 	Name              string
+	syntax            *syntaxRules
 	lineComments      []string
 	regexLineComments []*regexp.Regexp
 	multiLines        [][]string
@@ -224,7 +225,7 @@ var Exts = map[string]string{
 	"less":        "LESS",
 	"ly":          "Lilypond",
 	"Objective-C": "Objective-C", // deplicated Obj-C/Matlab/Mercury
-	"Matlab":      "MATLAB",      // both use ext '.m'
+	"MATLAB":      "MATLAB",      // language name returned by go-enry for '.m'
 	"Mercury":     "Mercury",     // use ext '.m'
 	"md":          "Markdown",
 	"markdown":    "Markdown",
@@ -515,7 +516,7 @@ func (langs *DefinedLanguages) GetFormattedString() string {
 
 // NewDefinedLanguages create DefinedLanguages.
 func NewDefinedLanguages() *DefinedLanguages {
-	return &DefinedLanguages{
+	definitions := &DefinedLanguages{
 		Langs: map[string]*Language{
 			"ActionScript":        NewLanguage("ActionScript", []string{"//"}, [][]string{{"/*", "*/"}}),
 			"Ada":                 NewLanguage("Ada", []string{"--"}, [][]string{{"", ""}}),
@@ -707,4 +708,8 @@ func NewDefinedLanguages() *DefinedLanguages {
 			"Zsh":                 NewLanguage("Zsh", []string{"#"}, [][]string{{"", ""}}),
 		},
 	}
+	for name, language := range definitions.Langs {
+		language.syntax = builtInSyntax[name]
+	}
+	return definitions
 }

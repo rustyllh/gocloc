@@ -101,11 +101,14 @@ darwin/arm64, the code and comment microbenchmarks dropped from 8,195 to 4 alloc
 when replacing the string-based parser. Use the full fixture suite to measure end-to-end effects;
 these microbenchmarks do not represent whole-repository scan times.
 
-Regression tests compare counts, callback contents/order, and debug output against a frozen
-test-only reference parser. Run the differential fuzz target separately from timing measurements:
+Regression tests compare the legacy rule-based parser's counts, callback contents/order, and
+debug output against a frozen test-only reference parser. The C/C Header/Go lexer has separate
+semantic regression tests: the frozen parser is not an oracle for its corrected string and
+comment handling. Run both fuzz targets separately from timing measurements:
 
 ```sh
 go test . -run '^$' -fuzz '^FuzzAnalyzeReaderMatchesReference$' -fuzztime=30s
+go test . -run '^$' -fuzz '^FuzzAnalyzeReaderQuotedCommentMarkers$' -fuzztime=30s
 ```
 
 ## Real repository benchmark
