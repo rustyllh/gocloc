@@ -51,9 +51,9 @@ Append CLI options after the image name, for example `--dedup -o json .`.
 ## Performance
 
 * CPU Apple M3 8-core / 16 GiB / macOS 27.0 arm64 / Go 1.26.6
-* cloc 2.04
-* tokei 14.0.0 compiled with serialization support: json
-* upstream gocloc [679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d)
+* [cloc 2.04](https://github.com/AlDanial/cloc/releases/tag/v2.04)
+* [tokei 14.0.0](https://github.com/XAMPPRocky/tokei/releases/tag/v14.0.0) compiled with serialization support: json
+* upstream gocloc [679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d) (source build; [releases](https://github.com/hhatto/gocloc/releases))
 * optimized gocloc: `0.1.9 (488b23c)`
 * target repository is [golang/go](https://github.com/golang/go), branch `master`, commit [6b3800e](https://github.com/golang/go/commit/6b3800e1dd90925b4184acd6391f68bffd16b6a5)
 
