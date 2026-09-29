@@ -1,4 +1,4 @@
-package gocloc
+package core
 
 import "github.com/rustyllh/gocloc/internal/lexer"
 

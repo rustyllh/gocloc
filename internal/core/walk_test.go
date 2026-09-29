@@ -1,4 +1,4 @@
-package gocloc
+package core
 
 import (
 	"os"

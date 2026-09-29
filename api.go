@@ -3,7 +3,7 @@ package gocloc
 import (
 	"io"
 
-	core "github.com/rustyllh/gocloc/internal/core"
+	"github.com/rustyllh/gocloc/internal/core"
 )
 
 // Public types remain aliases so existing callers can use the same fields,
