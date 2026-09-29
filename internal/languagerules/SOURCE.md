@@ -6,7 +6,7 @@ Upstream commit: `c14f744716272fadeb27a74443cdffa0af35f82f`
 
 SHA-256 of `languages.json`: `596748f92a5dca4065cc73e9379cf45615f1c06ba0b5b279b5851edd8258bd05`
 
-The snapshot is used to generate built-in lexical rules. `go generate ./...`
+The snapshot is used to generate `internal/lexer/rules_generated.go`. `go generate ./...`
 reads the checked-in file and does not access the network. The upstream work is
 used under its MIT license; see `LICENCE-MIT` in this directory.
 

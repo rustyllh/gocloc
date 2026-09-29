@@ -72,6 +72,10 @@ func (e *OptionError) Error() string { return fmt.Sprintf("invalid %s: %v", e.Fi
 func (e *OptionError) Unwrap() error { return e.Err }
 
 func (opts *Options) prepare(languages *DefinedLanguages) (*ClocOptions, error) {
+	return opts.prepareWithExts(languages, Exts)
+}
+
+func (opts *Options) prepareWithExts(languages *DefinedLanguages, exts map[string]string) (*ClocOptions, error) {
 	if opts == nil {
 		opts = &Options{}
 	}
@@ -117,7 +121,7 @@ func (opts *Options) prepare(languages *DefinedLanguages) (*ClocOptions, error) 
 		*filter.target = compiled
 	}
 	for _, ext := range opts.ExcludeExts {
-		if language, ok := Exts[ext]; ok {
+		if language, ok := exts[ext]; ok {
 			prepared.ExcludeExts[language] = struct{}{}
 			continue
 		}

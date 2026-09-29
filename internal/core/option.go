@@ -36,6 +36,8 @@ type ClocOptions struct {
 	// serializes writes within a scan, including writes from traversal and workers.
 	Diagnostics io.Writer
 	diagnostics *diagnosticSink
+	exts        map[string]string
+	extsSet     bool
 
 	// OnCode is triggered for each line of code.
 	// Processor.Analyze invokes callbacks in workers, never guaranteeing the

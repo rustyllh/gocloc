@@ -11,6 +11,8 @@ import (
 	"sort"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/rustyllh/gocloc/internal/lexer"
 )
 
 // ClocFile is collecting to line count result.
@@ -132,7 +134,11 @@ func detectAndAnalyzeFile(
 	if !ok {
 		return result
 	}
-	languageKey, ok := Exts[ext]
+	exts := opts.exts
+	if !opts.extsSet {
+		exts = Exts
+	}
+	languageKey, ok := exts[ext]
 	if !ok {
 		return result
 	}
@@ -200,9 +206,9 @@ func analyzeLines(filename string, language *Language, reader *lineReader, opts 
 	isFirstLine := true
 	rules := syntaxForLanguage(language)
 	useSyntax := rules != nil
-	var scanner lineScanner
+	var scanner lexer.Scanner
 	if useSyntax {
-		scanner = newLineScanner(rules)
+		scanner = lexer.NewScanner(rules)
 	}
 	inComments := [][2]string{}
 	// Reuse flags for every multiline-comment row instead of allocating per row.
@@ -227,14 +233,14 @@ scannerloop:
 				input = bytes.TrimPrefix(input, []byte("\xef\xbb\xbf"))
 				line = bytes.TrimPrefix(line, []byte("\xef\xbb\xbf"))
 			}
-			isCode := scanner.scanLine(input, line)
+			isCode := scanner.ScanLine(input, line)
 			isFirstLine = false
 			switch {
 			case len(line) == 0:
 				onBlank(
 					clocFile,
 					opts,
-					scanner.inComment(),
+					scanner.InComment(),
 					line,
 					lineOrg,
 				)
@@ -242,7 +248,7 @@ scannerloop:
 				onCode(
 					clocFile,
 					opts,
-					scanner.inComment(),
+					scanner.InComment(),
 					line,
 					lineOrg,
 				)
@@ -250,7 +256,7 @@ scannerloop:
 				onComment(
 					clocFile,
 					opts,
-					scanner.inComment(),
+					scanner.InComment(),
 					line,
 					lineOrg,
 				)

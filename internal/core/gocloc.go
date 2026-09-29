@@ -4,6 +4,7 @@ package gocloc
 type Processor struct {
 	langs *DefinedLanguages
 	opts  *ClocOptions
+	exts  map[string]string
 }
 
 // Result defined processing result.
@@ -21,12 +22,17 @@ type Result struct {
 // with a diagnostic, following Processor.Analyze's behavior.
 // Analyze returns only after all workers and callbacks have completed.
 func Analyze(paths []string, opts *Options) (*Result, error) {
+	return AnalyzeWithExts(paths, opts, Exts)
+}
+
+// AnalyzeWithExts lets the public package retain its mutable Exts mapping.
+func AnalyzeWithExts(paths []string, opts *Options, exts map[string]string) (*Result, error) {
 	languages := NewDefinedLanguages()
-	prepared, err := opts.prepare(languages)
+	prepared, err := opts.prepareWithExts(languages, exts)
 	if err != nil {
 		return nil, err
 	}
-	return NewProcessor(languages, prepared).Analyze(paths)
+	return NewProcessorWithExts(languages, prepared, exts).Analyze(paths)
 }
 
 func resolveWorkerCount(opts *ClocOptions) int {
@@ -43,15 +49,23 @@ func resolveWorkerCount(opts *ClocOptions) int {
 // It retains ClocOptions semantics, including one worker for Workers <= 1.
 // For built-in languages and automatic concurrency, use Analyze with Options.
 func NewProcessor(langs *DefinedLanguages, options *ClocOptions) *Processor {
+	return NewProcessorWithExts(langs, options, Exts)
+}
+
+// NewProcessorWithExts supplies an extension mapping without changing global state.
+func NewProcessorWithExts(langs *DefinedLanguages, options *ClocOptions, exts map[string]string) *Processor {
 	return &Processor{
 		langs: langs,
 		opts:  options,
+		exts:  exts,
 	}
 }
 
 // Analyze executes gocloc parsing for the directory of the paths argument and returns the result.
 func (p *Processor) Analyze(paths []string) (*Result, error) {
 	opts := p.opts.withDiagnostics()
+	opts.exts = p.exts
+	opts.extsSet = true
 	total := NewLanguage("TOTAL", []string{}, [][]string{{"", ""}})
 	languages, clocFiles, err := scanAndAnalyzeFiles(paths, p.langs, opts)
 	if err != nil {

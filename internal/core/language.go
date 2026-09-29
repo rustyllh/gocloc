@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/go-enry/go-enry/v2"
+	"github.com/rustyllh/gocloc/internal/lexer"
 )
 
 // ClocLanguage is provided for xml-cloc and json format.
@@ -24,7 +25,7 @@ type ClocLanguage struct {
 // Language is a type used to definitions and store statistics for one programming language.
 type Language struct {
 	Name              string
-	syntax            *syntaxRules
+	syntax            *lexer.Rules
 	lineComments      []string
 	regexLineComments []*regexp.Regexp
 	multiLines        [][]string
@@ -471,9 +472,9 @@ func (l *Language) WithRegexLineComments(regexLineComments []string) *Language {
 	return l
 }
 
-func lang2exts(lang string) (exts string) {
+func lang2exts(lang string, extensions map[string]string) (exts string) {
 	var es []string
-	for ext, l := range Exts {
+	for ext, l := range extensions {
 		if lang == l {
 			switch lang {
 			case "Objective-C", "MATLAB", "Mercury":
@@ -497,19 +498,32 @@ func lang2exts(lang string) (exts string) {
 
 // DefinedLanguages is the type information for mapping language name(key) and NewLanguage.
 type DefinedLanguages struct {
-	Langs map[string]*Language
+	Langs           map[string]*Language
+	extensionSource *map[string]string
+}
+
+// NewDefinedLanguagesWithExtensionSource keeps public extension listings tied
+// to the facade's mutable extension mapping.
+func NewDefinedLanguagesWithExtensionSource(source *map[string]string) *DefinedLanguages {
+	languages := NewDefinedLanguages()
+	languages.extensionSource = source
+	return languages
 }
 
 // GetFormattedString return DefinedLanguages as a human-readable string.
 func (langs *DefinedLanguages) GetFormattedString() string {
 	var buf bytes.Buffer
+	extensions := Exts
+	if langs.extensionSource != nil {
+		extensions = *langs.extensionSource
+	}
 	var printLangs []string
 	for _, lang := range langs.Langs {
 		printLangs = append(printLangs, lang.Name)
 	}
 	sort.Strings(printLangs)
 	for _, lang := range printLangs {
-		buf.WriteString(fmt.Sprintf("%-30v (%s)\n", lang, lang2exts(lang)))
+		buf.WriteString(fmt.Sprintf("%-30v (%s)\n", lang, lang2exts(lang, extensions)))
 	}
 	return buf.String()
 }
@@ -709,7 +723,7 @@ func NewDefinedLanguages() *DefinedLanguages {
 		},
 	}
 	for name, language := range definitions.Langs {
-		language.syntax = builtInSyntax[name]
+		language.syntax = lexer.BuiltIn(name)
 	}
 	return definitions
 }

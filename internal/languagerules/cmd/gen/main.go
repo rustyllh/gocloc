@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-const sourcePath = "internal/languagerules/languages.json"
-const outputPath = "rules_generated.go"
+const sourcePath = "languages.json"
+const outputPath = "../lexer/rules_generated.go"
 const sourceSHA256 = "596748f92a5dca4065cc73e9379cf45615f1c06ba0b5b279b5851edd8258bd05"
 
 type upstreamRule struct {
@@ -58,7 +58,7 @@ func main() {
 	sort.Slice(selected, func(i, j int) bool { return selected[i].name < selected[j].name })
 	var out bytes.Buffer
 	out.WriteString("// Code generated from internal/languagerules/languages.json; DO NOT EDIT.\n")
-	out.WriteString("package gocloc\n\nvar builtInSyntax = map[string]*syntaxRules{\n")
+	out.WriteString("package lexer\n\nvar builtInSyntax = map[string]*Rules{\n")
 	for _, language := range selected {
 		rule, found := upstream.Languages[language.source]
 		if !found || len(rule.LineComments) == 0 || len(rule.BlockComments) == 0 {

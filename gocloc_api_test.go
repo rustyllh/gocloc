@@ -76,6 +76,57 @@ func TestAnalyzeEmptyPaths(t *testing.T) {
 	}
 }
 
+func TestReplacedExtensionsAffectPublicAnalysis(t *testing.T) {
+	// Exts is a mutable compatibility variable. This top-level test does not
+	// run in parallel because it temporarily replaces the package mapping.
+	preexistingLanguages := gocloc.NewDefinedLanguages()
+	original := gocloc.Exts
+	modified := make(map[string]string, len(original)+1)
+	for ext, language := range original {
+		modified[ext] = language
+	}
+	modified["gox"] = "Go"
+	gocloc.Exts = modified
+	t.Cleanup(func() { gocloc.Exts = original })
+	if !strings.Contains(gocloc.NewDefinedLanguages().GetFormattedString(), "gox") {
+		t.Fatal("language listing ignored the replaced extension mapping")
+	}
+	if !strings.Contains(preexistingLanguages.GetFormattedString(), "gox") {
+		t.Fatal("existing language listing ignored the replaced extension mapping")
+	}
+
+	dir := writeAPIFixture(t, map[string]string{"sample.gox": "package sample\n"})
+	for _, tc := range []struct {
+		name    string
+		analyze func() (*gocloc.Result, error)
+	}{
+		{name: "Analyze", analyze: func() (*gocloc.Result, error) {
+			return gocloc.Analyze([]string{dir}, nil)
+		}},
+		{name: "Processor", analyze: func() (*gocloc.Result, error) {
+			return gocloc.NewProcessor(gocloc.NewDefinedLanguages(), gocloc.NewClocOptions()).Analyze([]string{dir})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.analyze()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total.Total != 1 || result.Total.Code != 1 || result.Languages["Go"] == nil {
+				t.Fatalf("replacement extension mapping was ignored: %+v", result.Total)
+			}
+		})
+	}
+
+	excluded, err := gocloc.Analyze([]string{dir}, &gocloc.Options{ExcludeExts: []string{"gox"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if excluded.Total.Total != 0 {
+		t.Fatalf("custom extension filter was ignored: %+v", excluded.Total)
+	}
+}
+
 func TestAnalyzeFilters(t *testing.T) {
 	t.Parallel()
 	dir := writeAPIFixture(t, map[string]string{

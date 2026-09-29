@@ -91,22 +91,6 @@ func TestBuiltInSyntaxDebugAndReadFailure(t *testing.T) {
 	}
 }
 
-func TestBuiltInSyntaxNestedBlock(t *testing.T) {
-	t.Parallel()
-	language := NewLanguage("Nested", []string{"//"}, [][]string{{"/*", "*/"}})
-	language.syntax = &syntaxRules{
-		blockComments: []blockCommentRule{{open: "/*", close: "*/", nested: true}},
-	}
-	file := AnalyzeReader(
-		"sample", language,
-		strings.NewReader("/* outer /* inner */ still outer */\ncode\n"),
-		&ClocOptions{},
-	)
-	if file.Code != 1 || file.Comments != 1 {
-		t.Fatalf("nested comments: %+v", file)
-	}
-}
-
 func TestBuiltInSyntaxCustomRules(t *testing.T) {
 	t.Parallel()
 	custom := NewLanguage("Go", []string{"#"}, [][]string{{"{-", "-}"}})

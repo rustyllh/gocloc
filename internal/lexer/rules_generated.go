@@ -1,7 +1,7 @@
 // Code generated from internal/languagerules/languages.json; DO NOT EDIT.
-package gocloc
+package lexer
 
-var builtInSyntax = map[string]*syntaxRules{
+var builtInSyntax = map[string]*Rules{
 	// C: tokei C; local character-literal and line-splice rules
 	"C": {
 		starts:        [4]uint64{141304424038400, 0, 0, 0},

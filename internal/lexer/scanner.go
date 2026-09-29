@@ -1,4 +1,4 @@
-package gocloc
+package lexer
 
 import (
 	"bytes"
@@ -6,9 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// lineScanner is private to one file. The rules it references are read-only.
-type lineScanner struct {
-	rules         *syntaxRules
+// Scanner is private to one file. The rules it references are read-only.
+type Scanner struct {
+	rules         *Rules
 	block         int
 	depth         int
 	stringRule    int
@@ -21,8 +21,8 @@ type lineScanner struct {
 	templates []int
 }
 
-func newLineScanner(rules *syntaxRules) lineScanner {
-	return lineScanner{
+func NewScanner(rules *Rules) Scanner {
+	return Scanner{
 		rules:         rules,
 		block:         -1,
 		stringRule:    -1,
@@ -30,15 +30,15 @@ func newLineScanner(rules *syntaxRules) lineScanner {
 	}
 }
 
-func (s *lineScanner) inComment() bool {
+func (s *Scanner) InComment() bool {
 	return s.block >= 0
 }
 
-func (s *lineScanner) inTemplateText() bool {
+func (s *Scanner) inTemplateText() bool {
 	return len(s.templates) > 0 && s.templates[len(s.templates)-1] == 0
 }
 
-func (s *lineScanner) scanLine(line, trimmed []byte) bool {
+func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 	hasNewline := len(line) > 0 && line[len(line)-1] == '\n'
 	if hasNewline {
 		line = bytes.TrimSuffix(line[:len(line)-1], []byte{'\r'})
@@ -155,7 +155,7 @@ func (s *lineScanner) scanLine(line, trimmed []byte) bool {
 
 // Avoid per-byte interpretation for ordinary C/Go source lines. JavaScript
 // needs token context even on lines without comments, so it takes the slow path.
-func (s *lineScanner) fastLine(line, trimmed []byte, continued bool) (bool, bool) {
+func (s *Scanner) fastLine(line, trimmed []byte, continued bool) (bool, bool) {
 	if s.rules.special != syntaxGeneric || continued || s.block >= 0 ||
 		s.stringRule >= 0 || s.lineComment || !s.rules.fastSimple {
 		return false, false
@@ -179,7 +179,7 @@ func (s *lineScanner) fastLine(line, trimmed []byte, continued bool) (bool, bool
 	return true, true
 }
 
-func (s *lineScanner) lineCommentAt(input []byte) string {
+func (s *Scanner) lineCommentAt(input []byte) string {
 	for _, marker := range s.rules.lineComments {
 		if bytes.HasPrefix(input, []byte(marker)) {
 			return marker
@@ -188,7 +188,7 @@ func (s *lineScanner) lineCommentAt(input []byte) string {
 	return ""
 }
 
-func (s *lineScanner) blockAt(input []byte) int {
+func (s *Scanner) blockAt(input []byte) int {
 	for i, rule := range s.rules.blockComments {
 		if bytes.HasPrefix(input, []byte(rule.open)) {
 			return i
@@ -197,7 +197,7 @@ func (s *lineScanner) blockAt(input []byte) int {
 	return -1
 }
 
-func (s *lineScanner) stringAt(input []byte) int {
+func (s *Scanner) stringAt(input []byte) int {
 	for i, rule := range s.rules.strings {
 		if bytes.HasPrefix(input, []byte(rule.open)) {
 			return i
@@ -206,7 +206,7 @@ func (s *lineScanner) stringAt(input []byte) int {
 	return -1
 }
 
-func (s *lineScanner) scanBlock(line []byte, pos int) int {
+func (s *Scanner) scanBlock(line []byte, pos int) int {
 	rule := s.rules.blockComments[s.block]
 	if !rule.nested {
 		end := bytes.Index(line[pos:], []byte(rule.close))
@@ -231,7 +231,7 @@ func (s *lineScanner) scanBlock(line []byte, pos int) int {
 	return pos + 1
 }
 
-func (s *lineScanner) scanString(line []byte, pos int) int {
+func (s *Scanner) scanString(line []byte, pos int) int {
 	rule := s.rules.strings[s.stringRule]
 	if rule.escape == 0 {
 		end := bytes.Index(line[pos:], []byte(rule.close))
@@ -258,7 +258,7 @@ func (s *lineScanner) scanString(line []byte, pos int) int {
 	return pos + 1
 }
 
-func (s *lineScanner) scanTemplate(line []byte, pos int) int {
+func (s *Scanner) scanTemplate(line []byte, pos int) int {
 	if s.escaped {
 		s.escaped = false
 		return pos + 1
@@ -280,7 +280,7 @@ func (s *lineScanner) scanTemplate(line []byte, pos int) int {
 	return pos + 1
 }
 
-func (s *lineScanner) scanRegex(line []byte, pos int) int {
+func (s *Scanner) scanRegex(line []byte, pos int) int {
 	if s.escaped {
 		s.escaped = false
 		return pos + 1
@@ -301,7 +301,7 @@ func (s *lineScanner) scanRegex(line []byte, pos int) int {
 	return pos + 1
 }
 
-func (s *lineScanner) scanCodeByte(line []byte, pos int, hasCode *bool) int {
+func (s *Scanner) scanCodeByte(line []byte, pos int, hasCode *bool) int {
 	ch := line[pos]
 	if s.rules.special == syntaxJavaScript && isIdentifierStart(ch) {
 		end := pos + 1
