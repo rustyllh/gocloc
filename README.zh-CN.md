@@ -51,58 +51,48 @@ docker run --rm --read-only --mount "type=bind,source=$(pwd),target=/workdir,rea
 ## 性能
 
 * CPU Apple M3 8 核 / 16 GiB / macOS 27.0 arm64 / Go 1.26.6
-* [cloc 2.04](https://github.com/AlDanial/cloc/releases/tag/v2.04)
+* 优化版 gocloc：`0.1.11 (acceaca)`
 * [tokei 14.0.0](https://github.com/XAMPPRocky/tokei/releases/tag/v14.0.0)，编译时启用了 JSON 序列化支持
 * 上游 gocloc：[679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d)（源码构建；[发行版](https://github.com/hhatto/gocloc/releases)）
-* 优化版 gocloc：`0.1.9 (488b23c)`
+* [cloc 2.04](https://github.com/AlDanial/cloc/releases/tag/v2.04)
 * 测试目标：[golang/go](https://github.com/golang/go) 仓库，`master` 分支，提交 [6b3800e](https://github.com/golang/go/commit/6b3800e1dd90925b4184acd6391f68bffd16b6a5)
 
-所有工具均使用默认选项扫描上述仓库。命令输出取自一次有代表性的热缓存运行；`time` 行显示热缓存平均值：tokei 和上游 gocloc 各运行 10 次，优化版 gocloc 运行 30 次，cloc 运行 3 次。
+所有工具均使用默认选项扫描上述仓库。命令输出取自一次有代表性的热缓存运行；`time` 行显示热缓存平均值：优化版 gocloc 运行 30 次，tokei 和上游 gocloc 各运行 10 次，cloc 运行 3 次。
 
-### cloc
+### 优化版 gocloc
 
 ```
-$ time cloc .
-3 errors:
-Line count, exceeded timeout:  ./src/net/http/requestwrite_test.go
-Line count, exceeded timeout:  ./src/vendor/golang.org/x/net/idna/tables15.0.0.go
-Line count, exceeded timeout:  ./src/vendor/golang.org/x/net/idna/tables17.0.0.go
-github.com/AlDanial/cloc v 2.04  T=26.55 s (530.8 files/s, 142732.0 lines/s)
------------------------------------------------------------------------------------
-Language                         files          blank        comment           code
------------------------------------------------------------------------------------
-Go                               11519         274964         460748        2523775
-Text                              1473          14804              0         233134
-Assembly                           656          16184          24182         149525
-HTML                                15           2098             50          20117
-Snakemake                           28           2202              0          19021
-JSON                                40            124              0          14186
-YAML                                68            361            364           6564
-C                                  113            968            845           5547
-Markdown                            64           1443             36           4840
-CSV                                  1              0              0           2118
-Bourne Shell                        19            273            914           1761
-JavaScript                           9            301            331           1706
-Perl                                 9            163            163           1058
-C/C++ Header                        27            153            368            798
-Bourne Again Shell                  16            112            248            516
-Python                               2            155            187            425
-CSS                                  4              5             13            360
-Windows Resource File                4             23              0            146
-DOS Batch                            5             35             57            120
-Logos                                2             16              0            101
-Dockerfile                           2             15             18             61
-diff                                 1              7             20             36
-C++                                  2             11             14             24
-make                                 6              9             34             22
-Objective-C                          1              2              3             11
-Fortran 90                           2              1              3              8
-awk                                  1              1              6              7
-MATLAB                               1              1              0              4
------------------------------------------------------------------------------------
-SUM:                             14090         314431         488604        2985991
------------------------------------------------------------------------------------
-cloc .  23.151s user 1.617s system 94.3% cpu 26.104 total
+$ time gocloc .
+-------------------------------------------------------------------------------
+Language                     files          blank        comment           code
+-------------------------------------------------------------------------------
+Go                           11746         277212         451413        2574521
+Plain Text                    1476          14813              0         233179
+Assembly                       659          16207          24198         149524
+HTML                            15           2098            180          19987
+JSON                            41            124              0          14186
+YAML                            59            326            361           6096
+C                              117            976            854           5601
+Markdown                        68           1440             36           4837
+BASH                            31            362           1144           2228
+JavaScript                       9            301            331           1706
+C Header                        28            154            371            801
+Perl                             9            163            581            640
+Python                           2            155            187            425
+CSS                              4              5             13            360
+Batch                            5             35              0            177
+Plan9 Shell                      4             23             47             99
+Dockerfile                       2             15             18             61
+Bourne Shell                     4             23             18             49
+C++                              2             11             14             24
+Makefile                         6              9             34             22
+Objective-C                      2              3              3             15
+FORTRAN Modern                   2              1              3              8
+Awk                              1              1              6              7
+-------------------------------------------------------------------------------
+TOTAL                        14292         314457         479812        3014553
+-------------------------------------------------------------------------------
+gocloc .  0.255s user 0.863s system 520.0% cpu 0.215 total
 ```
 
 ### tokei
@@ -189,40 +179,50 @@ TOTAL                        14057         312279         513468        2939865
 gocloc-upstream .  0.609s user 0.947s system 105.3% cpu 1.476 total
 ```
 
-### 优化版 gocloc
+### cloc
 
 ```
-$ time gocloc .
--------------------------------------------------------------------------------
-Language                     files          blank        comment           code
--------------------------------------------------------------------------------
-Go                           11746         277212         489930        2536004
-Plain Text                    1476          14813              0         233179
-Assembly                       659          16207          24198         149524
-HTML                            15           2098            180          19987
-JSON                            41            124              0          14186
-YAML                            59            326            361           6096
-C                              117            976            855           5600
-Markdown                        68           1440             36           4837
-BASH                            31            362           1144           2228
-JavaScript                       9            301            332           1705
-C Header                        28            154            371            801
-Perl                             9            163            581            640
-Python                           2            155            187            425
-CSS                              4              5             13            360
-Batch                            5             35              0            177
-Plan9 Shell                      4             23             47             99
-Dockerfile                       2             15             18             61
-Bourne Shell                     4             23             18             49
-C++                              2             11             14             24
-Makefile                         6              9             34             22
-Objective-C                      2              3              3             15
-FORTRAN Modern                   2              1              3              8
-Awk                              1              1              6              7
--------------------------------------------------------------------------------
-TOTAL                        14292         314457         518331        2976034
--------------------------------------------------------------------------------
-gocloc .  0.308s user 0.895s system 550.3% cpu 0.222 total
+$ time cloc .
+3 errors:
+Line count, exceeded timeout:  ./src/net/http/requestwrite_test.go
+Line count, exceeded timeout:  ./src/vendor/golang.org/x/net/idna/tables15.0.0.go
+Line count, exceeded timeout:  ./src/vendor/golang.org/x/net/idna/tables17.0.0.go
+github.com/AlDanial/cloc v 2.04  T=26.55 s (530.8 files/s, 142732.0 lines/s)
+-----------------------------------------------------------------------------------
+Language                         files          blank        comment           code
+-----------------------------------------------------------------------------------
+Go                               11519         274964         460748        2523775
+Text                              1473          14804              0         233134
+Assembly                           656          16184          24182         149525
+HTML                                15           2098             50          20117
+Snakemake                           28           2202              0          19021
+JSON                                40            124              0          14186
+YAML                                68            361            364           6564
+C                                  113            968            845           5547
+Markdown                            64           1443             36           4840
+CSV                                  1              0              0           2118
+Bourne Shell                        19            273            914           1761
+JavaScript                           9            301            331           1706
+Perl                                 9            163            163           1058
+C/C++ Header                        27            153            368            798
+Bourne Again Shell                  16            112            248            516
+Python                               2            155            187            425
+CSS                                  4              5             13            360
+Windows Resource File                4             23              0            146
+DOS Batch                            5             35             57            120
+Logos                                2             16              0            101
+Dockerfile                           2             15             18             61
+diff                                 1              7             20             36
+C++                                  2             11             14             24
+make                                 6              9             34             22
+Objective-C                          1              2              3             11
+Fortran 90                           2              1              3              8
+awk                                  1              1              6              7
+MATLAB                               1              1              0              4
+-----------------------------------------------------------------------------------
+SUM:                             14090         314431         488604        2985991
+-----------------------------------------------------------------------------------
+cloc .  23.151s user 1.617s system 94.3% cpu 26.104 total
 ```
 
 ## 使用
