@@ -17,8 +17,19 @@ type Scanner struct {
 	regex         bool
 	regexClass    bool
 	expectOperand bool
+	document      bool
+	raw           bool
+	rawDelimiter  [16]byte
+	rawLength     int
+	rawHashes     int
+	python        pythonState
+	blocks        []blockFrame
 	// Zero means template text. Positive values count braces inside ${...}.
 	templates []int
+}
+
+type blockFrame struct {
+	rule, depth int
 }
 
 func NewScanner(rules *Rules) Scanner {
@@ -27,11 +38,12 @@ func NewScanner(rules *Rules) Scanner {
 		block:         -1,
 		stringRule:    -1,
 		expectOperand: true,
+		python:        pythonState{moduleDocument: true},
 	}
 }
 
 func (s *Scanner) InComment() bool {
-	return s.block >= 0
+	return s.block >= 0 || s.document
 }
 
 func (s *Scanner) inTemplateText() bool {
@@ -47,10 +59,18 @@ func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 	if continued {
 		line = line[:len(line)-1]
 	}
+	if s.rules.special == syntaxPython {
+		s.python.beginLine(
+			line,
+			trimmed,
+			s.stringRule >= 0,
+			s.document,
+		)
+	}
 	if isCode, handled := s.fastLine(line, trimmed, continued); handled {
 		return isCode
 	}
-	hasCode := s.stringRule >= 0 || s.inTemplateText() || s.regex
+	hasCode := s.stringRule >= 0 && !s.document || s.inTemplateText() || s.regex || s.raw
 	for pos := 0; pos < len(line); {
 		if s.lineComment {
 			break
@@ -59,15 +79,39 @@ func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 			pos = s.scanBlock(line, pos)
 			continue
 		}
+		if s.raw {
+			pos = s.scanRaw(line, pos)
+			hasCode = true
+			continue
+		}
 		if s.inTemplateText() {
 			pos = s.scanTemplate(line, pos)
 			hasCode = true
 			continue
 		}
 		if s.stringRule >= 0 {
+			isDocument := s.document
 			pos = s.scanString(line, pos)
-			hasCode = true
+			if !isDocument {
+				hasCode = true
+			}
 			continue
+		}
+		if s.rules.raw != rawNone {
+			if end, ok := s.beginRaw(line, pos); ok {
+				pos = end
+				hasCode = true
+				continue
+			}
+		}
+		if s.rules.special == syntaxPython {
+			if end, ok := s.beginPythonString(line, pos, hasCode); ok {
+				pos = end
+				if !s.document {
+					hasCode = true
+				}
+				continue
+			}
 		}
 		if s.regex {
 			pos = s.scanRegex(line, pos)
@@ -88,6 +132,21 @@ func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 				}
 			}
 		}
+		// Profiling comment-heavy C/Go input showed unnecessary quote searches
+		// in longest matching. The generator proves these rule sets have only
+		// // and /* */ comments and no quote opener starting with a slash.
+		if s.rules.fastSimple && line[pos] == '/' && pos+1 < len(line) {
+			switch line[pos+1] {
+			case '/':
+				s.lineComment = true
+				pos = len(line)
+				continue
+			case '*':
+				s.block, s.depth = 0, 1
+				pos += 2
+				continue
+			}
+		}
 		// Generated rules carry a first-byte index. Hand-written rules without
 		// one still take the complete marker checks below.
 		if s.rules.special == syntaxGeneric && s.rules.starts != ([4]uint64{}) {
@@ -104,27 +163,52 @@ func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 				continue
 			}
 		}
-		if marker := s.lineCommentAt(line[pos:]); marker != "" {
+		marker := s.lineCommentAt(line, pos)
+		block := s.blockAt(line, pos, false)
+		blockLength := 0
+		if block >= 0 {
+			blockLength = len(s.rules.blockComments[block].open)
+		}
+		rule := s.stringAt(line[pos:])
+		quoteLength := 0
+		if rule >= 0 {
+			quoteLength = len(s.rules.quote(rule).open)
+		}
+		// All token kinds participate in longest matching, not just quotes.
+		// At equal length a block wins over a line comment, then a quote.
+		if blockLength > 0 && blockLength >= len(marker) && blockLength >= quoteLength {
+			s.block = block
+			s.depth = 1
+			pos += blockLength
+			continue
+		}
+		if marker != "" && len(marker) >= quoteLength {
 			s.lineComment = true
 			break
 		}
-		if block := s.blockAt(line[pos:]); block >= 0 {
-			s.block = block
-			s.depth = 1
-			pos += len(s.rules.blockComments[block].open)
-			continue
-		}
-		if s.rules.special == syntaxJavaScript && line[pos] == '`' {
-			s.templates = append(s.templates, 0)
-			hasCode = true
-			pos++
-			continue
-		}
-		if rule := s.stringAt(line[pos:]); rule >= 0 {
+		if rule >= 0 {
+			if s.rules.special == syntaxJavaScript && line[pos] == '`' {
+				s.templates = append(s.templates, 0)
+				hasCode = true
+				pos++
+				continue
+			}
+			if line[pos] == '\'' && s.rules.special == syntaxRust && !rustCharacter(line[pos:]) {
+				pos = s.scanCodeByte(line, pos, &hasCode)
+				continue
+			}
+			if line[pos] == '\'' && s.rules.raw == rawCpp && cppDigitSeparator(line, pos) {
+				pos++
+				hasCode = true
+				continue
+			}
 			s.stringRule = rule
 			s.escaped = false
-			hasCode = true
-			pos += len(s.rules.strings[rule].open)
+			s.document = rule >= len(s.rules.strings) && !hasCode
+			if !s.document {
+				hasCode = true
+			}
+			pos += quoteLength
 			continue
 		}
 		if s.rules.special == syntaxJavaScript && line[pos] == '/' {
@@ -143,12 +227,17 @@ func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 	}
 	if !continued {
 		s.lineComment = false
-		if s.stringRule >= 0 && !s.rules.strings[s.stringRule].multiline {
+		stringContinues := s.rules.continuation && s.escaped && hasNewline
+		if s.stringRule >= 0 && !s.rules.quote(s.stringRule).multiline && !stringContinues {
 			s.stringRule = -1
-			s.escaped = false
+			s.document = false
 		}
+		s.escaped = false
 		s.regex = false // JavaScript regular expressions cannot span physical lines.
 		s.regexClass = false
+	}
+	if s.rules.special == syntaxPython {
+		s.python.finishLine(s.stringRule >= 0)
 	}
 	return hasCode
 }
@@ -156,8 +245,12 @@ func (s *Scanner) ScanLine(line, trimmed []byte) bool {
 // Avoid per-byte interpretation for ordinary C/Go source lines. JavaScript
 // needs token context even on lines without comments, so it takes the slow path.
 func (s *Scanner) fastLine(line, trimmed []byte, continued bool) (bool, bool) {
+	noMarkers := len(s.rules.lineComments)+len(s.rules.blockComments)+len(s.rules.strings)+len(s.rules.docQuotes) == 0
+	if s.rules.special == syntaxGeneric && noMarkers {
+		return len(trimmed) != 0, true
+	}
 	if s.rules.special != syntaxGeneric || continued || s.block >= 0 ||
-		s.stringRule >= 0 || s.lineComment || !s.rules.fastSimple {
+		s.stringRule >= 0 || s.raw || s.lineComment || !s.rules.fastSimple {
 		return false, false
 	}
 	if len(trimmed) == 0 || bytes.HasPrefix(trimmed, []byte("//")) {
@@ -179,68 +272,150 @@ func (s *Scanner) fastLine(line, trimmed []byte, continued bool) (bool, bool) {
 	return true, true
 }
 
-func (s *Scanner) lineCommentAt(input []byte) string {
+func (s *Scanner) lineCommentAt(line []byte, pos int) string {
+	matched := ""
 	for _, marker := range s.rules.lineComments {
-		if bytes.HasPrefix(input, []byte(marker)) {
-			return marker
+		if s.rules.fortran && marker != "!" {
+			if pos == 0 && bytes.HasPrefix(line, []byte(marker)) {
+				return marker
+			}
+			continue
+		}
+		if len(marker) > len(matched) && s.markerAt(line, pos, marker) {
+			matched = marker
 		}
 	}
-	return ""
+	return matched
 }
 
-func (s *Scanner) blockAt(input []byte) int {
+func (s *Scanner) blockAt(line []byte, pos int, nestedOnly bool) int {
+	matched := -1
 	for i, rule := range s.rules.blockComments {
-		if bytes.HasPrefix(input, []byte(rule.open)) {
-			return i
+		if nestedOnly && !rule.nested {
+			continue
+		}
+		if rule.lineStart && pos != 0 {
+			continue
+		}
+		if (matched < 0 || len(rule.open) > len(s.rules.blockComments[matched].open)) &&
+			s.markerAt(line, pos, rule.open) {
+			matched = i
 		}
 	}
-	return -1
+	return matched
+}
+
+func (s *Scanner) markerAt(line []byte, pos int, marker string) bool {
+	end := pos + len(marker)
+	if end > len(line) {
+		return false
+	}
+	matched := bytes.Equal(line[pos:end], []byte(marker))
+	if s.rules.foldCase {
+		matched = bytes.EqualFold(line[pos:end], []byte(marker))
+	}
+	if !matched {
+		return false
+	}
+	// Word-like markers (REM, dnl, =pod) must not consume identifiers.
+	first, last := marker[0], marker[len(marker)-1]
+	if isIdentifierPart(first) && pos > 0 && identifierByte(line[pos-1]) {
+		return false
+	}
+	if isIdentifierPart(last) && end < len(line) && identifierByte(line[end]) {
+		return false
+	}
+	return true
 }
 
 func (s *Scanner) stringAt(input []byte) int {
-	for i, rule := range s.rules.strings {
-		if bytes.HasPrefix(input, []byte(rule.open)) {
-			return i
+	matched := -1
+	for i := range len(s.rules.strings) + len(s.rules.docQuotes) {
+		rule := s.rules.quote(i)
+		if bytes.HasPrefix(input, []byte(rule.open)) &&
+			(matched < 0 || len(rule.open) > len(s.rules.quote(matched).open)) {
+			matched = i
 		}
 	}
-	return -1
+	return matched
 }
 
 func (s *Scanner) scanBlock(line []byte, pos int) int {
 	rule := s.rules.blockComments[s.block]
+	if rule.lineStart {
+		if pos == 0 && s.markerAt(line, pos, rule.close) {
+			s.closeBlock()
+			return len(rule.close)
+		}
+		return len(line)
+	}
 	if !rule.nested {
+		if s.rules.foldCase {
+			for end := pos; end+len(rule.close) <= len(line); end++ {
+				if s.markerAt(line, end, rule.close) {
+					s.closeBlock()
+					return end + len(rule.close)
+				}
+			}
+			return len(line)
+		}
 		end := bytes.Index(line[pos:], []byte(rule.close))
 		if end < 0 {
 			return len(line)
 		}
-		s.block = -1
-		s.depth = 0
+		s.closeBlock()
 		return pos + end + len(rule.close)
 	}
-	if bytes.HasPrefix(line[pos:], []byte(rule.close)) {
-		s.depth--
-		if s.depth == 0 {
-			s.block = -1
-		}
+	nested := s.blockAt(line, pos, true)
+	// Inside a nested block only nested openers compete with its closer.
+	// Prefer the longest delimiter, with the closer winning equal lengths.
+	closeWins := nested < 0 || len(rule.close) >= len(s.rules.blockComments[nested].open)
+	if closeWins && s.markerAt(line, pos, rule.close) {
+		s.closeBlock()
 		return pos + len(rule.close)
 	}
-	if rule.nested && bytes.HasPrefix(line[pos:], []byte(rule.open)) {
-		s.depth++
-		return pos + len(rule.open)
+	if nested >= 0 {
+		if nested == s.block {
+			s.depth++
+		} else {
+			s.blocks = append(s.blocks, blockFrame{rule: s.block, depth: s.depth})
+			s.block = nested
+			s.depth = 1
+		}
+		return pos + len(s.rules.blockComments[nested].open)
 	}
 	return pos + 1
 }
 
+func (s *Scanner) closeBlock() {
+	s.depth--
+	if s.depth > 0 {
+		return
+	}
+	if len(s.blocks) > 0 {
+		last := s.blocks[len(s.blocks)-1]
+		s.blocks = s.blocks[:len(s.blocks)-1]
+		s.block, s.depth = last.rule, last.depth
+		return
+	}
+	s.block = -1
+}
+
 func (s *Scanner) scanString(line []byte, pos int) int {
-	rule := s.rules.strings[s.stringRule]
+	rule := s.rules.quote(s.stringRule)
 	if rule.escape == 0 {
 		end := bytes.Index(line[pos:], []byte(rule.close))
 		if end < 0 {
 			return len(line)
 		}
+		end += pos
+		if rule.doubled && bytes.HasPrefix(line[end+len(rule.close):], []byte(rule.close)) {
+			return end + 2*len(rule.close)
+		}
 		s.stringRule = -1
+		s.document = false
 		s.expectOperand = false
-		return pos + end + len(rule.close)
+		return end + len(rule.close)
 	}
 	if s.escaped {
 		s.escaped = false
@@ -251,7 +426,11 @@ func (s *Scanner) scanString(line []byte, pos int) int {
 		return pos + 1
 	}
 	if bytes.HasPrefix(line[pos:], []byte(rule.close)) {
+		if rule.doubled && bytes.HasPrefix(line[pos+len(rule.close):], []byte(rule.close)) {
+			return pos + 2*len(rule.close)
+		}
 		s.stringRule = -1
+		s.document = false
 		s.expectOperand = false
 		return pos + len(rule.close)
 	}
@@ -303,6 +482,9 @@ func (s *Scanner) scanRegex(line []byte, pos int) int {
 
 func (s *Scanner) scanCodeByte(line []byte, pos int, hasCode *bool) int {
 	ch := line[pos]
+	if s.rules.special == syntaxPython {
+		s.python.codeByte(ch)
+	}
 	if s.rules.special == syntaxJavaScript && isIdentifierStart(ch) {
 		end := pos + 1
 		for end < len(line) && isIdentifierPart(line[end]) {

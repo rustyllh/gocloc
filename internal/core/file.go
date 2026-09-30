@@ -233,8 +233,19 @@ scannerloop:
 				input = bytes.TrimPrefix(input, []byte("\xef\xbb\xbf"))
 				line = bytes.TrimPrefix(line, []byte("\xef\xbb\xbf"))
 			}
-			isCode := scanner.ScanLine(input, line)
+			isShebang := isFirstLine && bytes.HasPrefix(line, []byte("#!"))
 			isFirstLine = false
+			if isShebang {
+				onCode(
+					clocFile,
+					opts,
+					scanner.InComment(),
+					line,
+					lineOrg,
+				)
+				continue
+			}
+			isCode := scanner.ScanLine(input, line)
 			switch {
 			case len(line) == 0:
 				onBlank(

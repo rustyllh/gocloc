@@ -21,7 +21,7 @@ export GOGC=${GOGC:-100}
 export GOMEMLIMIT=${GOMEMLIMIT:-off}
 bench_time=${BENCHTIME:-200ms}
 bench_count=${BENCH_COUNT:-6}
-bench_filter=${BENCH_FILTER:-'^BenchmarkProcessorFixtures$'}
+bench_filter=${BENCH_FILTER:-'^(BenchmarkProcessorFixtures|BenchmarkProcessorLanguages)$'}
 benchstat=golang.org/x/perf/cmd/benchstat@v0.0.0-20260908200009-22c9c6c9d4da
 
 {
@@ -44,10 +44,10 @@ benchstat=golang.org/x/perf/cmd/benchstat@v0.0.0-20260908200009-22c9c6c9d4da
 
 printf 'Benchmark report: %s\n' "$report_dir"
 # Log fixture fingerprints and verify both modes before measuring anything.
-go test . -run '^TestBenchmarkFixtures$' -count=1 -v | tee "$report_dir/fixtures.txt"
+go test . -run '^TestBenchmark(Fixtures|Languages)$' -count=1 -v | tee "$report_dir/fixtures.txt"
 go test . -run '^$' -bench "$bench_filter" -benchmem \
     -benchtime="$bench_time" -count="$bench_count" | tee "$report_dir/raw.txt"
-if ! grep -q '^BenchmarkProcessorFixtures/' "$report_dir/raw.txt"; then
+if ! grep -Eq '^BenchmarkProcessor(Fixtures|Languages)/' "$report_dir/raw.txt"; then
     printf 'No fixture benchmarks matched %s\n' "$bench_filter" >&2
     exit 1
 fi

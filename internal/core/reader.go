@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 )
 
@@ -45,11 +46,11 @@ func (r *lineReader) next() ([]byte, error) {
 		return line, nil
 	}
 	line, err := r.reader.ReadSlice('\n')
-	if err != bufio.ErrBufferFull {
+	if !errors.Is(err, bufio.ErrBufferFull) {
 		return line, err
 	}
 	r.longLine = append(r.longLine[:0], line...)
-	for err == bufio.ErrBufferFull {
+	for errors.Is(err, bufio.ErrBufferFull) {
 		line, err = r.reader.ReadSlice('\n')
 		r.longLine = append(r.longLine, line...)
 	}

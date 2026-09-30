@@ -104,6 +104,59 @@ func TestBuiltInSyntaxCustomRules(t *testing.T) {
 	}
 }
 
+func TestGeneratedLanguagesPreserveCustomDefinitions(t *testing.T) {
+	t.Parallel()
+	for name, language := range NewDefinedLanguages().Langs {
+		if language.syntax == nil {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			custom := NewLanguage(name, []string{"#custom"}, [][]string{{"{-", "-}"}})
+			file := AnalyzeReader(
+				"sample",
+				custom,
+				strings.NewReader("#custom\ncode /* literal */\n{- comment -}\n"),
+				NewClocOptions(),
+			)
+			if file.Code != 1 || file.Comments != 2 {
+				t.Fatalf("generated rules replaced custom rules: %+v", file)
+			}
+		})
+	}
+}
+
+func TestBuiltInSyntaxPreservesRegexOverrides(t *testing.T) {
+	t.Parallel()
+	language := NewDefinedLanguages().Langs["Ada"].WithRegexLineComments([]string{`^custom.*`})
+	file := AnalyzeReader(
+		"sample",
+		language,
+		strings.NewReader("custom comment\ncode\n"),
+		NewClocOptions(),
+	)
+	if file.Comments != 1 || file.Code != 1 {
+		t.Fatalf("built-in rules ignored a caller-supplied regex: %+v", file)
+	}
+}
+
+func TestDeferredLanguagesRetainLegacyScanner(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{
+		"HTML", "Vue", "Svelte", "Ruby HTML", "Markdown", "Templ", "Plain Text",
+		"Jupyter Notebook", "JSX", "Just", "VimL",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			language := NewDefinedLanguages().Langs[name]
+			if syntaxForLanguage(language) != nil {
+				t.Fatal("deferred language was enabled")
+			}
+			checkReaderAgainstReference(t, language, "<script>\n// text\n</script>\n```go\n// text\n```\n<!-- real -->\n")
+		})
+	}
+}
+
 func TestBuiltInSyntaxPipelineCallbacks(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -3,6 +3,9 @@ package core
 import "github.com/rustyllh/gocloc/internal/lexer"
 
 func syntaxForLanguage(language *Language) *lexer.Rules {
+	if len(language.regexLineComments) != 0 {
+		return nil // Caller-supplied regexes must retain their legacy semantics.
+	}
 	if language.syntax != nil {
 		return language.syntax
 	}

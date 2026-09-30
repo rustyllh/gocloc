@@ -51,7 +51,7 @@ Append CLI options after the image name, for example `--dedup -o json .`.
 ## Performance
 
 * CPU Apple M3 8-core / 16 GiB / macOS 27.0 arm64 / Go 1.26.6
-* optimized gocloc: `0.1.11 (acceaca)`
+* optimized gocloc (local build): `v0.1.12-0.20260929032858-2cac0fa28dff+dirty (2cac0fa28dffe8e4988709b3d3fd8a7cb6747be0-dirty)`
 * [tokei 14.0.0](https://github.com/XAMPPRocky/tokei/releases/tag/v14.0.0) compiled with serialization support: json
 * upstream gocloc [679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d) (source build; [releases](https://github.com/hhatto/gocloc/releases))
 * [cloc 2.04](https://github.com/AlDanial/cloc/releases/tag/v2.04)
@@ -68,20 +68,20 @@ Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
 Go                           11746         277212         451413        2574521
 Plain Text                    1476          14813              0         233179
-Assembly                       659          16207          24198         149524
+Assembly                       659          16207          24208         149514
 HTML                            15           2098            180          19987
 JSON                            41            124              0          14186
-YAML                            59            326            361           6096
+YAML                            59            326            331           6126
 C                              117            976            854           5601
 Markdown                        68           1440             36           4837
-BASH                            31            362           1144           2228
+BASH                            31            362            592           2780
 JavaScript                       9            301            331           1706
+Perl                             9            163            163           1058
 C Header                        28            154            371            801
-Perl                             9            163            581            640
-Python                           2            155            187            425
+Python                           2            155            196            416
 CSS                              4              5             13            360
-Batch                            5             35              0            177
-Plan9 Shell                      4             23             47             99
+Batch                            5             35             57            120
+Plan9 Shell                      4             23             44            102
 Dockerfile                       2             15             18             61
 Bourne Shell                     4             23             18             49
 C++                              2             11             14             24
@@ -90,9 +90,9 @@ Objective-C                      2              3              3             15
 FORTRAN Modern                   2              1              3              8
 Awk                              1              1              6              7
 -------------------------------------------------------------------------------
-TOTAL                        14292         314457         479812        3014553
+TOTAL                        14292         314457         478885        3015480
 -------------------------------------------------------------------------------
-gocloc .  0.255s user 0.863s system 520.0% cpu 0.215 total
+gocloc .  0.299s user 0.871s system 592.2% cpu 0.198 total
 ```
 
 ### tokei

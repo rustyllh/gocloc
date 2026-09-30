@@ -4,18 +4,23 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/format"
+	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 )
 
 const sourcePath = "languages.json"
+const mappingPath = "mappings.json"
 const outputPath = "../lexer/rules_generated.go"
+const coveragePath = "COVERAGE.md"
 const sourceSHA256 = "596748f92a5dca4065cc73e9379cf45615f1c06ba0b5b279b5851edd8258bd05"
 
 type upstreamRule struct {
+	Name           string     `json:"name"`
 	LineComments   []string   `json:"line_comment"`
 	BlockComments  [][]string `json:"multi_line_comments"`
 	NestedComments [][]string `json:"nested_comments"`
@@ -26,180 +31,165 @@ type upstreamRule struct {
 	Blank          bool       `json:"blank"`
 	Literate       bool       `json:"literate"`
 	Important      []string   `json:"important_syntax"`
+	Kind           string     `json:"kind"`
+	Extensions     []string   `json:"extensions"`
+	Filenames      []string   `json:"filenames"`
+	Env            []string   `json:"env"`
+	Shebangs       []string   `json:"shebangs"`
+	PathSuffixes   []string   `json:"path_suffixes"`
+	MIME           []string   `json:"mime"`
 }
 
 type upstreamRules struct {
 	Languages map[string]upstreamRule `json:"languages"`
 }
 
-var selected = []struct {
-	name, source string
-}{
-	{name: "C", source: "C"},
-	{name: "C Header", source: "C"},
-	{name: "D", source: "D"},
-	{name: "Go", source: "Go"},
-	{name: "JavaScript", source: "JavaScript"},
-	{name: "TypeScript", source: "TypeScript"},
+type languageMapping struct {
+	Source     string `json:"source"`
+	KeepLegacy string `json:"keep_legacy"`
 }
 
 func main() {
+	if err := generate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func generate() error {
 	content, err := os.ReadFile(sourcePath)
 	if err != nil {
-		fail(err)
+		return fmt.Errorf("read rules: %w", err)
 	}
 	if got := fmt.Sprintf("%x", sha256.Sum256(content)); got != sourceSHA256 {
-		fail(fmt.Errorf("unexpected tokei rules SHA-256: %s", got))
+		return fmt.Errorf("unexpected tokei rules SHA-256: %s", got)
 	}
 	var upstream upstreamRules
-	if err := json.Unmarshal(content, &upstream); err != nil {
-		fail(err)
+	if err := decodeJSON(content, &upstream); err != nil {
+		return fmt.Errorf("decode rules: %w", err)
 	}
-	sort.Slice(selected, func(i, j int) bool { return selected[i].name < selected[j].name })
+	content, err = os.ReadFile(mappingPath)
+	if err != nil {
+		return fmt.Errorf("read mappings: %w", err)
+	}
+	mappings := map[string]languageMapping{}
+	if err := decodeJSON(content, &mappings); err != nil {
+		return fmt.Errorf("decode mappings: %w", err)
+	}
+	code, report, err := generateArtifacts(upstream.Languages, mappings)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(outputPath, code, 0644); err != nil {
+		return fmt.Errorf("write generated rules: %w", err)
+	}
+	if err := os.WriteFile(coveragePath, report, 0644); err != nil {
+		return fmt.Errorf("write coverage report: %w", err)
+	}
+	return nil
+}
+
+func decodeJSON(content []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("expected one JSON document, got trailing data: %v", err)
+	}
+	return nil
+}
+
+func generateArtifacts(
+	upstream map[string]upstreamRule,
+	mappings map[string]languageMapping,
+) ([]byte, []byte, error) {
+	if err := validateMappings(upstream, mappings); err != nil {
+		return nil, nil, err
+	}
 	var out bytes.Buffer
-	out.WriteString("// Code generated from internal/languagerules/languages.json; DO NOT EDIT.\n")
-	out.WriteString("package lexer\n\nvar builtInSyntax = map[string]*Rules{\n")
-	for _, language := range selected {
-		rule, found := upstream.Languages[language.source]
-		if !found || len(rule.LineComments) == 0 || len(rule.BlockComments) == 0 {
-			fail(fmt.Errorf("incomplete rule for %q", language.source))
+	compiled := make(map[string]compiledRule, len(upstream))
+	out.WriteString("// Code generated from internal/languagerules/languages.json and mappings.json; DO NOT EDIT.\n")
+	out.WriteString("package lexer\n\nvar upstreamSyntax = map[string]*Rules{\n")
+	for _, name := range sortedKeys(upstream) {
+		rule, err := compileRule(name, upstream[name])
+		if err != nil {
+			return nil, nil, fmt.Errorf("compile %q: %w", name, err)
 		}
-		if rule.Nested || rule.Blank || rule.Literate || len(rule.DocQuotes) != 0 ||
-			len(rule.VerbatimQuotes) != 0 || len(rule.Important) != 0 {
-			fail(fmt.Errorf("unsupported special lexical fields for %q", language.source))
-		}
-		if language.name == "Go" || language.name == "C" || language.name == "C Header" {
-			if len(rule.LineComments) != 1 || rule.LineComments[0] != "//" ||
-				len(rule.BlockComments) != 1 || len(rule.BlockComments[0]) != 2 ||
-				rule.BlockComments[0][0] != "/*" || rule.BlockComments[0][1] != "*/" ||
-				len(rule.NestedComments) != 0 {
-				fail(fmt.Errorf("fast path requires // and /* */ rules for %q", language.source))
-			}
-		}
-		starts := validateMarkers(language.name, rule)
-		fmt.Fprintf(&out, "// %s: tokei %s", language.name, language.source)
-		if language.name != language.source {
-			out.WriteString(" (explicit name mapping)")
-		}
-		switch language.name {
-		case "Go":
-			out.WriteString("; local rune and raw-string rules")
-		case "C", "C Header":
-			out.WriteString("; local character-literal and line-splice rules")
-		case "JavaScript", "TypeScript":
-			out.WriteString("; local template and regex-literal rules")
-		}
-		out.WriteByte('\n')
-		fmt.Fprintf(&out, "%q: {\nstarts:[4]uint64{%d,%d,%d,%d},\nlineComments: []string{",
-			language.name, starts[0], starts[1], starts[2], starts[3])
-		for _, marker := range rule.LineComments {
-			if marker == "" {
-				fail(fmt.Errorf("empty line comment for %q", language.source))
-			}
-			fmt.Fprintf(&out, "%q,", marker)
-		}
-		out.WriteString("},\nblockComments: []blockCommentRule{")
-		for _, group := range []struct {
-			pairs  [][]string
-			nested bool
-		}{{rule.BlockComments, false}, {rule.NestedComments, true}} {
-			for _, pair := range group.pairs {
-				if len(pair) != 2 || pair[0] == "" || pair[1] == "" {
-					fail(fmt.Errorf("invalid block comment for %q: %q", language.source, pair))
-				}
-				fmt.Fprintf(&out, "{open:%q,close:%q,nested:%t},", pair[0], pair[1], group.nested)
-			}
-		}
-		out.WriteString("},\nstrings: []stringRule{")
-		for _, pair := range rule.Quotes {
-			if len(pair) != 2 {
-				fail(fmt.Errorf("invalid quote for %q: %q", language.source, pair))
-			}
-			open := strings.ReplaceAll(pair[0], `\"`, `"`)
-			close := strings.ReplaceAll(pair[1], `\"`, `"`)
-			if open == "" || close == "" {
-				fail(fmt.Errorf("empty quote for %q", language.source))
-			}
-			if open == "`" && (language.name == "JavaScript" || language.name == "TypeScript") {
-				continue
-			}
-			fmt.Fprintf(&out, "{open:%q,close:%q,escape:'\\\\'},", open, close)
-		}
-		if language.name == "Go" || language.name == "C" || language.name == "C Header" {
-			out.WriteString("{open:\"'\",close:\"'\",escape:'\\\\'},")
-		}
-		if language.name == "Go" {
-			out.WriteString("{open:\"`\",close:\"`\",multiline:true},")
-		}
-		if language.name == "JavaScript" || language.name == "TypeScript" {
-			// Template literals need interpolation-aware scanning, not the generic
-			// fixed-delimiter string rule generated from the upstream entry.
-			out.WriteString("{open:\"`\",close:\"`\",escape:'\\\\',multiline:true},")
-		}
+		compiled[name] = rule
+		fmt.Fprintf(&out, "// %s\n%q: {\n", rule.note, name)
+		rule.write(&out)
 		out.WriteString("},\n")
-		if language.name == "Go" || language.name == "C" || language.name == "C Header" {
-			out.WriteString("fastSimple:true,\n")
+	}
+	out.WriteString("}\n\nvar builtInSyntax = map[string]*Rules{\n")
+	for _, name := range sortedKeys(mappings) {
+		mapping := mappings[name]
+		if mapping.KeepLegacy == "" {
+			fmt.Fprintf(
+				&out,
+				"%q: upstreamSyntax[%q],\n",
+				name,
+				mapping.Source,
+			)
 		}
-		if language.name == "Go" {
-			out.WriteString("rawDelimiter:'`',\n")
-		}
-		if language.name == "C" || language.name == "C Header" {
-			out.WriteString("lineSplice:true,\n")
-		}
-		if language.name == "JavaScript" || language.name == "TypeScript" {
-			out.WriteString("special:syntaxJavaScript,\n")
-		}
-		out.WriteString("},\n")
 	}
 	out.WriteString("}\n")
 	formatted, err := format.Source(out.Bytes())
 	if err != nil {
-		fail(fmt.Errorf("format generated rules: %w\n%s", err, &out))
+		return nil, nil, fmt.Errorf("format generated rules: %w", err)
 	}
-	if err := os.WriteFile(outputPath, formatted, 0644); err != nil {
-		fail(err)
+	return formatted, coverageReport(upstream, mappings, compiled), nil
+}
+
+func validateMappings(upstream map[string]upstreamRule, mappings map[string]languageMapping) error {
+	for _, name := range sortedKeys(mappings) {
+		mapping := mappings[name]
+		if name == "" || mapping.Source == "" && mapping.KeepLegacy == "" {
+			return fmt.Errorf("missing source or legacy reason for %q", name)
+		}
+		if mapping.Source == "" {
+			continue
+		}
+		if _, exists := upstream[mapping.Source]; !exists {
+			return fmt.Errorf("unknown source %q for %q", mapping.Source, name)
+		}
+		if deferredSource(mapping.Source) && mapping.KeepLegacy == "" {
+			return fmt.Errorf("source %q needs an explicit legacy reason for %q", mapping.Source, name)
+		}
+	}
+	return nil
+}
+
+func deferredSource(name string) bool {
+	switch name {
+	case "Html", "Vue", "Svelte", "RubyHtml", "GlimmerJs", "GlimmerTs", "Templ", "LinguaFranca",
+		"Markdown", "Mdx", "Djot", "UnrealDeveloperMarkdown", "Text", "Jsx", "Tsx", "Jupyter", "VimScript":
+		return true
+	default:
+		return false
 	}
 }
 
-// Runtime dispatch checks line comments, block comments, then strings. Reject
-// overlapping starts rather than making that order an accidental language rule.
-func validateMarkers(name string, rule upstreamRule) [4]uint64 {
-	var starts []string
-	var firstBytes [4]uint64
-	add := func(marker string) {
-		if marker == "" {
-			fail(fmt.Errorf("empty opening marker for %q", name))
-		}
-		for _, previous := range starts {
-			if strings.HasPrefix(marker, previous) || strings.HasPrefix(previous, marker) {
-				fail(fmt.Errorf("ambiguous opening markers %q and %q for %q", previous, marker, name))
-			}
-		}
-		starts = append(starts, marker)
-		first := marker[0]
-		firstBytes[first>>6] |= 1 << (first & 63)
+func sortedKeys[T any](values map[string]T) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	for _, marker := range rule.LineComments {
-		add(marker)
-	}
-	for _, group := range [][][]string{rule.BlockComments, rule.NestedComments, rule.Quotes} {
-		for _, pair := range group {
-			if len(pair) != 2 || pair[1] == "" {
-				fail(fmt.Errorf("invalid delimiter pair %q for %q", pair, name))
-			}
-			add(strings.ReplaceAll(pair[0], `\"`, `"`))
-		}
-	}
-	if name == "Go" || name == "C" || name == "C Header" {
-		add("'")
-	}
-	if name == "Go" {
-		add("`")
-	}
-	return firstBytes
+	slices.Sort(keys)
+	return keys
 }
 
-func fail(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
+func quotePair(pair []string) (string, string, error) {
+	if len(pair) != 2 || pair[0] == "" || pair[1] == "" {
+		return "", "", fmt.Errorf("invalid delimiter pair %q", pair)
+	}
+	return decodeMarker(pair[0]), decodeMarker(pair[1]), nil
+}
+
+// The snapshot escapes quotes for Rust code generation. Other backslashes are
+// actual language delimiters (for example Q), not JSON escapes to unquote again.
+func decodeMarker(marker string) string {
+	return strings.ReplaceAll(marker, "\\\"", "\"")
 }
