@@ -8,8 +8,8 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/rustyllh/gocloc)](https://hub.docker.com/r/rustyllh/gocloc)
 [![Docker Image Size](https://img.shields.io/docker/image-size/rustyllh/gocloc/latest)](https://hub.docker.com/r/rustyllh/gocloc)
 
-一个用 Go 编写的快速、并行源码行数统计工具，基于 [hhatto/gocloc](https://github.com/hhatto/gocloc)。
-灵感来自 [tokei](https://github.com/Aaronepower/tokei)，针对文件扫描和行数统计进行了性能优化。
+一个用 Go 编写的高性能、并行源码行数统计工具，基于 [hhatto/gocloc](https://github.com/hhatto/gocloc)。
+灵感来自 [tokei](https://github.com/Aaronepower/tokei)，在我们最新的 Go 源码仓库基准测试中，平均耗时更低。
 
 ## 安装
 

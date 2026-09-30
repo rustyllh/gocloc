@@ -8,8 +8,8 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/rustyllh/gocloc)](https://hub.docker.com/r/rustyllh/gocloc)
 [![Docker Image Size](https://img.shields.io/docker/image-size/rustyllh/gocloc/latest)](https://hub.docker.com/r/rustyllh/gocloc)
 
-A fast, parallel source code line counter written in Go, based on [hhatto/gocloc](https://github.com/hhatto/gocloc).
-Inspired by [tokei](https://github.com/Aaronepower/tokei), with performance optimizations for file scanning and line counting.
+A high-performance, parallel source code line counter written in Go, based on [hhatto/gocloc](https://github.com/hhatto/gocloc).
+Inspired by [tokei](https://github.com/Aaronepower/tokei) and faster in our latest Go repository benchmarks.
 
 ## Installation
 
