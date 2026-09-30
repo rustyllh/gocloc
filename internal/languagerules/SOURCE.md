@@ -8,6 +8,10 @@ SHA-256 of `languages.json`: `596748f92a5dca4065cc73e9379cf45615f1c06ba0b5b279b5
 
 The snapshot is used under its MIT license; see LICENCE-MIT in this directory.
 
+The snapshot and both generated artifacts use LF line endings, enforced by
+.gitattributes even when core.autocrlf is enabled. The SHA-256 and generated-file
+checks remain byte-for-byte; Windows checkout must not rewrite their contents.
+
 ## Generation and activation
 
 Run `go generate ./...` to regenerate rules_generated.go and COVERAGE.md. The

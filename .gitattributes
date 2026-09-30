@@ -1,0 +1,4 @@
+# Preserve the upstream snapshot checksum and byte-for-byte generated artifacts.
+/internal/languagerules/languages.json text eol=lf
+/internal/lexer/rules_generated.go text eol=lf
+/internal/languagerules/COVERAGE.md text eol=lf
