@@ -50,8 +50,8 @@ docker run --rm --read-only --mount "type=bind,source=$(pwd),target=/workdir,rea
 
 ## 性能
 
-* CPU Apple M3 8 核 / 16 GiB / macOS 27.0 arm64 / Go 1.26.6
-* 优化版 gocloc（本地构建）：`v0.1.12-0.20260929032858-2cac0fa28dff+dirty (2cac0fa28dffe8e4988709b3d3fd8a7cb6747be0-dirty)`
+* CPU Apple M3 8 核 / 16 GiB / macOS 27.0 arm64
+* 优化版 gocloc：`0.1.12 (8a20e2e)`（使用 Go 1.27.1 编译）
 * [tokei 14.0.0](https://github.com/XAMPPRocky/tokei/releases/tag/v14.0.0)，编译时启用了 JSON 序列化支持
 * 上游 gocloc：[679b457](https://github.com/hhatto/gocloc/commit/679b457182dcf852d90e52f132403d6b7de0e33d)（源码构建；[发行版](https://github.com/hhatto/gocloc/releases)）
 * [cloc 2.04](https://github.com/AlDanial/cloc/releases/tag/v2.04)
@@ -92,7 +92,7 @@ Awk                              1              1              6              7
 -------------------------------------------------------------------------------
 TOTAL                        14292         314457         478885        3015480
 -------------------------------------------------------------------------------
-gocloc .  0.299s user 0.871s system 592.2% cpu 0.198 total
+gocloc .  0.296s user 0.874s system 601.3% cpu 0.195 total
 ```
 
 ### tokei
